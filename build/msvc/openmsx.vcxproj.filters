@@ -462,9 +462,6 @@
     <ClCompile Include="$(OpenMSXSrcDir)\file\PreCacheFile.cc">
       <Filter>file</Filter>
     </ClCompile>
-    <ClCompile Include="$(OpenMSXSrcDir)\file\ReadDir.cc">
-      <Filter>file</Filter>
-    </ClCompile>
     <ClCompile Include="$(OpenMSXSrcDir)\file\ZipFileAdapter.cc">
       <Filter>file</Filter>
     </ClCompile>
@@ -766,6 +763,9 @@
       <Filter>memory</Filter>
     </ClCompile>
     <ClCompile Include="$(OpenMSXSrcDir)\memory\RomAscii16kB.cc">
+      <Filter>memory</Filter>
+    </ClCompile>
+    <ClCompile Include="$(OpenMSXSrcDir)\memory\RomAscii16X.cc">
       <Filter>memory</Filter>
     </ClCompile>
     <ClCompile Include="$(OpenMSXSrcDir)\memory\RomAscii8_8.cc">
@@ -1327,6 +1327,9 @@
       <Filter>serial</Filter>
     </ClCompile>
     <ClCompile Include="$(OpenMSXSrcDir)\serial\MSXMidi.cc">
+      <Filter>serial</Filter>
+    </ClCompile>
+    <ClCompile Include="$(OpenMSXSrcDir)\serial\MSXModem.cc">
       <Filter>serial</Filter>
     </ClCompile>
     <ClCompile Include="$(OpenMSXSrcDir)\serial\MusicModuleMIDI.cc">
@@ -2257,6 +2260,9 @@
     <None Include="$(OpenMSXSrcDir)\memory\RomAscii16kB.hh">
       <Filter>memory</Filter>
     </None>
+    <None Include="$(OpenMSXSrcDir)\memory\RomAscii16X.hh">
+      <Filter>memory</Filter>
+    </None>
     <None Include="$(OpenMSXSrcDir)\memory\RomAscii8_8.hh">
       <Filter>memory</Filter>
     </None>
@@ -2975,6 +2981,9 @@
       <Filter>serial</Filter>
     </None>
     <None Include="$(OpenMSXSrcDir)\serial\MSXMidi.hh">
+      <Filter>serial</Filter>
+    </None>
+    <None Include="$(OpenMSXSrcDir)\serial\MSXModem.hh">
       <Filter>serial</Filter>
     </None>
     <None Include="$(OpenMSXSrcDir)\serial\MusicModuleMIDI.hh">

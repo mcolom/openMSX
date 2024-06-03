@@ -80,7 +80,7 @@ private:
 	void resetVideoSystem();
 
 	// EventListener interface
-	int signalEvent(const Event& event) override;
+	bool signalEvent(const Event& event) override;
 
 	// RTSchedulable
 	void executeRT() override;
@@ -131,7 +131,7 @@ private:
 	RenderSettings renderSettings;
 
 	// the current renderer
-	RenderSettings::RendererID currentRenderer = RenderSettings::UNINITIALIZED;
+	RenderSettings::RendererID currentRenderer = RenderSettings::RendererID::UNINITIALIZED;
 
 	bool renderFrozen = false;
 	bool switchInProgress = false;

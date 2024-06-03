@@ -71,12 +71,14 @@
 #include "MSXKanji12.hh"
 #include "MSXMidi.hh"
 #include "MSXRS232.hh"
+#include "MSXModem.hh"
 #include "MSXMegaRam.hh"
 #include "MSXPac.hh"
 #include "MSXHBI55.hh"
 #include "DebugDevice.hh"
 #include "V9990.hh"
 #include "Video9000.hh"
+#include "RomAscii16X.hh"
 #include "ADVram.hh"
 #include "NowindInterface.hh"
 #include "MSXMirrorDevice.hh"
@@ -264,6 +266,8 @@ std::unique_ptr<MSXDevice> DeviceFactory::create(const DeviceConfig& conf)
 		result = make_unique<MSXKanji12>(conf);
 	} else if (type == "MSX-MIDI") {
 		result = make_unique<MSXMidi>(conf);
+	} else if (type == "MSX-Modem") {
+		result = make_unique<MSXModem>(conf);
 	} else if (type == "MSX-RS232") {
 		result = make_unique<MSXRS232>(conf);
 	} else if (type == "MegaRam") {
@@ -304,6 +308,8 @@ std::unique_ptr<MSXDevice> DeviceFactory::create(const DeviceConfig& conf)
 		result = make_unique<MusicalMemoryMapper>(conf);
 	} else if (type == "Carnivore2") {
 		result = make_unique<Carnivore2>(conf);
+	} else if (type == "ASCII16-X") {
+		result = make_unique<RomAscii16X>(conf);
 	} else if (type == "YamahaSKW01") {
 		result = make_unique<YamahaSKW01>(conf);
 	} else if (type == one_of("T7775", "T7937", "T9763", "T9769")) {

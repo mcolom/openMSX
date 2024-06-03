@@ -196,7 +196,7 @@ void ImGuiOsdIcons::paint(MSXMotherBoard* /*motherBoard*/)
 				return 1.0f - (t / iconsFadeDuration);
 			}();
 
-			auto& ic = state ? icon.on : icon.off;
+			const auto& ic = state ? icon.on : icon.off;
 			gl::vec2 cursor = ImGui::GetCursorPos();
 			ImGui::Image(ic.tex.getImGui(), gl::vec2(ic.size),
 			             {0.0f, 0.0f}, {1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, alpha});
@@ -276,7 +276,8 @@ void ImGuiOsdIcons::paintConfigureIcons()
 				ImGui::TableSetupColumn("Expression");
 				ImGui::TableHeadersRow();
 
-				enum Cmd { MOVE_FRONT, MOVE_FWD, MOVE_BWD, MOVE_BACK, INSERT, DELETE };
+				enum class Cmd { MOVE_FRONT, MOVE_FWD, MOVE_BWD, MOVE_BACK, INSERT, DELETE };
+				using enum Cmd;
 				std::pair<int, Cmd> cmd(-1, MOVE_FRONT);
 				auto lastRow = narrow<int>(iconInfo.size()) - 1;
 				im::ID_for_range(iconInfo.size(), [&](int row) {

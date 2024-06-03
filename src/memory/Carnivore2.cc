@@ -24,24 +24,14 @@
 
 namespace openmsx {
 
-static constexpr auto sectorInfo = [] {
-	// 8 * 8kB, followed by 127 * 64kB
-	using Info = AmdFlash::SectorInfo;
-	std::array<Info, 8 + 127> result = {};
-	std::fill(result.begin(), result.begin() + 8, Info{ 8 * 1024, false});
-	std::fill(result.begin() + 8, result.end(),   Info{64 * 1024, false});
-	return result;
-}();
-
 Carnivore2::Carnivore2(const DeviceConfig& config)
 	: MSXDevice(config)
 	, MSXMapperIOClient(getMotherBoard())
-	, flash(getName() + " flash", sectorInfo, 0x207e,
-	        AmdFlash::Addressing::BITS_12, config)
+	, flash(getName() + " flash", AmdFlashChip::M29W640GB, {}, config)
 	, ram(config, getName() + " ram", "ram", 2048 * 1024)
 	, eeprom(getName() + " eeprom",
 	         DeviceConfig(config, config.getChild("eeprom")))
-	, scc(getName() + " scc", config, getCurrentTime(), SCC::SCC_Compatible)
+	, scc(getName() + " scc", config, getCurrentTime(), SCC::Mode::Compatible)
 	, psg(getName() + " PSG", DummyAY8910Periphery::instance(), config,
               getCurrentTime())
 	, ym2413(getName() + " ym2413", config)
@@ -266,7 +256,7 @@ byte Carnivore2::peekConfigRegister(word address, EmuTime::param time) const
 	}
 }
 
-byte Carnivore2::readConfigRegister(word address, EmuTime::param time) const
+byte Carnivore2::readConfigRegister(word address, EmuTime::param time)
 {
 	address &= 0x3f;
 	if (address == 0x04) {
@@ -506,7 +496,7 @@ void Carnivore2::writeMultiMapperSlot(word address, byte value, EmuTime::param t
 	if (sccEnabled() && ((address | 1) == 0xbfff)) {
 		// write scc mode register (write-only)
 		sccMode = value;
-		scc.setChipMode((sccMode & 0x20) ? SCC::SCC_plusmode : SCC::SCC_Compatible);
+		scc.setMode((sccMode & 0x20) ? SCC::Mode::Plus : SCC::Mode::Compatible);
 	}
 	if (((sccMode & 0x10) == 0x00) && // note: no check for sccEnabled()
 	    ((address & 0x1800) == 0x1000)) {

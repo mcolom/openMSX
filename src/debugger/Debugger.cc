@@ -110,7 +110,7 @@ unsigned Debugger::insertProbeBreakPoint(
 	auto bp = std::make_unique<ProbeBreakPoint>(
 		std::move(command), std::move(condition), *this, probe, once, newId);
 	unsigned result = bp->getId();
-	motherBoard.getMSXCliComm().update(CliComm::DEBUG_UPDT, tmpStrCat("pp#", result), "add");
+	motherBoard.getMSXCliComm().update(CliComm::UpdateType::DEBUG_UPDT, tmpStrCat("pp#", result), "add");
 	probeBreakPoints.push_back(std::move(bp));
 	return result;
 }
@@ -123,7 +123,7 @@ void Debugger::removeProbeBreakPoint(string_view name)
 			if (auto it = ranges::find(probeBreakPoints, id, &ProbeBreakPoint::getId);
 			    it != std::end(probeBreakPoints)) {
 				motherBoard.getMSXCliComm().update(
-					CliComm::DEBUG_UPDT, name, "remove");
+					CliComm::UpdateType::DEBUG_UPDT, name, "remove");
 				move_pop_back(probeBreakPoints, it);
 				return;
 			}
@@ -139,7 +139,7 @@ void Debugger::removeProbeBreakPoint(string_view name)
 				"No (unconditional) breakpoint for probe: ", name);
 		}
 		motherBoard.getMSXCliComm().update(
-			CliComm::DEBUG_UPDT, tmpStrCat("pp#", (*it)->getId()), "remove");
+			CliComm::UpdateType::DEBUG_UPDT, tmpStrCat("pp#", (*it)->getId()), "remove");
 		move_pop_back(probeBreakPoints, it);
 	}
 }
@@ -147,7 +147,7 @@ void Debugger::removeProbeBreakPoint(string_view name)
 void Debugger::removeProbeBreakPoint(ProbeBreakPoint& bp)
 {
 	motherBoard.getMSXCliComm().update(
-		CliComm::DEBUG_UPDT, tmpStrCat("pp#", bp.getId()), "remove");
+		CliComm::UpdateType::DEBUG_UPDT, tmpStrCat("pp#", bp.getId()), "remove");
 	move_pop_back(probeBreakPoints, rfind_unguarded(probeBreakPoints, &bp,
 		[](auto& v) { return v.get(); }));
 }
@@ -158,7 +158,7 @@ unsigned Debugger::setWatchPoint(TclObject command, TclObject condition,
                                  bool once, unsigned newId /*= -1*/)
 {
 	std::shared_ptr<WatchPoint> wp;
-	if (type == one_of(WatchPoint::READ_IO, WatchPoint::WRITE_IO)) {
+	if (type == one_of(WatchPoint::Type::READ_IO, WatchPoint::Type::WRITE_IO)) {
 		wp = std::make_shared<WatchIO>(
 			motherBoard, type, beginAddr, endAddr,
 			std::move(command), std::move(condition), once, newId);
@@ -183,7 +183,7 @@ void Debugger::transfer(Debugger& other)
 
 	// Copy probes to new machine.
 	assert(probeBreakPoints.empty());
-	for (auto& bp : other.probeBreakPoints) {
+	for (const auto& bp : other.probeBreakPoints) {
 		if (ProbeBase* probe = findProbe(bp->getProbe().getName())) {
 			insertProbeBreakPoint(bp->getCommandObj(),
 			                      bp->getConditionObj(),
@@ -264,14 +264,14 @@ void Debugger::Cmd::list(TclObject& result)
 void Debugger::Cmd::desc(std::span<const TclObject> tokens, TclObject& result)
 {
 	checkNumArgs(tokens, 3, "debuggable");
-	Debuggable& device = debugger().getDebuggable(tokens[2].getString());
+	const Debuggable& device = debugger().getDebuggable(tokens[2].getString());
 	result = device.getDescription();
 }
 
 void Debugger::Cmd::size(std::span<const TclObject> tokens, TclObject& result)
 {
 	checkNumArgs(tokens, 3, "debuggable");
-	Debuggable& device = debugger().getDebuggable(tokens[2].getString());
+	const Debuggable& device = debugger().getDebuggable(tokens[2].getString());
 	result = device.getSize();
 }
 
@@ -447,17 +447,18 @@ void Debugger::Cmd::setWatchPoint(std::span<const TclObject> tokens, TclObject& 
 	case 2: { // address + type
 		string_view typeStr = arguments[0].getString();
 		unsigned max = [&] {
+			using enum WatchPoint::Type;
 			if (typeStr == "read_io") {
-				type = WatchPoint::READ_IO;
+				type = READ_IO;
 				return 0x100;
 			} else if (typeStr == "write_io") {
-				type = WatchPoint::WRITE_IO;
+				type = WRITE_IO;
 				return 0x100;
 			} else if (typeStr == "read_mem") {
-				type = WatchPoint::READ_MEM;
+				type = READ_MEM;
 				return 0x10000;
 			} else if (typeStr == "write_mem") {
-				type = WatchPoint::WRITE_MEM;
+				type = WRITE_MEM;
 				return 0x10000;
 			} else {
 				throw CommandException("Invalid type: ", typeStr);
@@ -512,21 +513,22 @@ void Debugger::Cmd::listWatchPoints(
 	std::span<const TclObject> /*tokens*/, TclObject& result)
 {
 	string res;
-	auto& interface = debugger().motherBoard.getCPUInterface();
+	const auto& interface = debugger().motherBoard.getCPUInterface();
 	for (const auto& wp : interface.getWatchPoints()) {
 		TclObject line = makeTclList(tmpStrCat("wp#", wp->getId()));
 		string type;
 		switch (wp->getType()) {
-		case WatchPoint::READ_IO:
+		using enum WatchPoint::Type;
+		case READ_IO:
 			type = "read_io";
 			break;
-		case WatchPoint::WRITE_IO:
+		case WRITE_IO:
 			type = "write_io";
 			break;
-		case WatchPoint::READ_MEM:
+		case READ_MEM:
 			type = "read_mem";
 			break;
-		case WatchPoint::WRITE_MEM:
+		case WRITE_MEM:
 			type = "write_mem";
 			break;
 		default:
@@ -680,7 +682,7 @@ void Debugger::Cmd::probeListBreakPoints(
 	std::span<const TclObject> /*tokens*/, TclObject& result)
 {
 	string res;
-	for (auto& p : debugger().probeBreakPoints) {
+	for (const auto& p : debugger().probeBreakPoints) {
 		TclObject line = makeTclList(tmpStrCat("pp#", p->getId()),
 		                             p->getProbe().getName(),
 		                             p->getCondition(),

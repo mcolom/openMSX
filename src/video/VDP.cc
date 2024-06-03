@@ -30,7 +30,6 @@ TODO:
 #include "EnumSetting.hh"
 #include "HardwareConfig.hh"
 #include "MSXCPU.hh"
-#include "MSXCliComm.hh"
 #include "MSXException.hh"
 #include "MSXMotherBoard.hh"
 #include "Reactor.hh"
@@ -104,7 +103,13 @@ VDP::VDP(const DeviceConfig& config)
 		getName() + ".too_fast_vram_access_callback",
 		"Tcl proc called when the VRAM is read or written too fast",
 		"",
-		Setting::SaveSetting::SAVE)
+		Setting::Save::YES)
+	, dotClockDirectionCallback(
+		getCommandController(),
+		getName() + ".dot_clock_direction_callback",
+		"Tcl proc called when DLCLK is set as input",
+		"default_dot_clock_direction_callback",
+		Setting::Save::YES)
 	, cpu(getCPU()) // used frequently, so cache it
 	, fixedVDPIOdelayCycles(getDelayCycles(getMotherBoard().getMachineConfig()->getConfig().getChild("devices")))
 {
@@ -825,7 +830,7 @@ void VDP::scheduleCpuVramAccess(bool isRead, byte write, EmuTime::param time)
 			// So this test could not decide between 8 or 9 TMS cycles.
 			// To be on the safe side we picked 8.
 			//
-			// Update: 8 cycles (DELTA_32) causes corruption in
+			// Update: 8 cycles (Delta::D32) causes corruption in
 			// 'Chase HQ', see
 			//    http://www.msx.org/forum/msx-talk/openmsx/openmsx-about-release-testing-help-wanted
 			// lowering it to 7 cycles seems fine. TODO needs more
@@ -833,8 +838,8 @@ void VDP::scheduleCpuVramAccess(bool isRead, byte write, EmuTime::param time)
 			// other variables that influence the exact timing (7
 			// vs 8 cycles).
 			pendingCpuAccess = true;
-			auto delta = isMSX1VDP() ? VDPAccessSlots::DELTA_28
-						 : VDPAccessSlots::DELTA_16;
+			auto delta = isMSX1VDP() ? VDPAccessSlots::Delta::D28
+						 : VDPAccessSlots::Delta::D16;
 			syncCpuVramAccess.setSyncPoint(getAccessSlot(time, delta));
 		}
 	}
@@ -1208,10 +1213,7 @@ void VDP::changeRegister(byte reg, byte val, EmuTime::param time)
 	case 9:
 		if ((val & 1) && ! warningPrinted) {
 			warningPrinted = true;
-			getCliComm().printWarning(
-				"The running MSX software has set bit 0 of VDP register 9 "
-				"(dot clock direction) to one. In an ordinary MSX, "
-				"the screen would go black and the CPU would stop running.");
+			dotClockDirectionCallback.execute();
 			// TODO: Emulate such behaviour.
 		}
 		if (change & 0x80) {
@@ -1596,7 +1598,7 @@ VDP::RegDebug::RegDebug(const VDP& vdp_)
 
 byte VDP::RegDebug::read(unsigned address)
 {
-	auto& vdp = OUTER(VDP, vdpRegDebug);
+	const auto& vdp = OUTER(VDP, vdpRegDebug);
 	return vdp.peekRegister(address);
 }
 
@@ -1622,7 +1624,7 @@ VDP::StatusRegDebug::StatusRegDebug(const VDP& vdp_)
 
 byte VDP::StatusRegDebug::read(unsigned address, EmuTime::param time)
 {
-	auto& vdp = OUTER(VDP, vdpStatusRegDebug);
+	const auto& vdp = OUTER(VDP, vdpStatusRegDebug);
 	return vdp.peekStatusReg(narrow<byte>(address), time);
 }
 
@@ -1637,7 +1639,7 @@ VDP::PaletteDebug::PaletteDebug(const VDP& vdp_)
 
 byte VDP::PaletteDebug::read(unsigned address)
 {
-	auto& vdp = OUTER(VDP, vdpPaletteDebug);
+	const auto& vdp = OUTER(VDP, vdpPaletteDebug);
 	word grb = vdp.getPalette(address / 2);
 	return (address & 1) ? narrow_cast<byte>(grb >> 8)
 	                     : narrow_cast<byte>(grb & 0xff);
@@ -1671,7 +1673,7 @@ VDP::VRAMPointerDebug::VRAMPointerDebug(const VDP& vdp_)
 
 byte VDP::VRAMPointerDebug::read(unsigned address)
 {
-	auto& vdp = OUTER(VDP, vramPointerDebug);
+	const auto& vdp = OUTER(VDP, vramPointerDebug);
 	if (address & 1) {
 		return narrow_cast<byte>(vdp.vramPointer >> 8);  // TODO add read/write mode?
 	} else {
@@ -1700,7 +1702,7 @@ VDP::RegisterLatchStatusDebug::RegisterLatchStatusDebug(const VDP &vdp_)
 
 byte VDP::RegisterLatchStatusDebug::read(unsigned /*address*/)
 {
-	auto& vdp = OUTER(VDP, registerLatchStatusDebug);
+	const auto& vdp = OUTER(VDP, registerLatchStatusDebug);
 	return byte(vdp.registerDataStored);
 }
 
@@ -1715,7 +1717,7 @@ VDP::VramAccessStatusDebug::VramAccessStatusDebug(const VDP &vdp_)
 
 byte VDP::VramAccessStatusDebug::read(unsigned /*address*/)
 {
-	auto& vdp = OUTER(VDP, vramAccessStatusDebug);
+	const auto& vdp = OUTER(VDP, vramAccessStatusDebug);
 	return byte(vdp.writeAccess);
 }
 
@@ -1729,7 +1731,7 @@ VDP::PaletteLatchStatusDebug::PaletteLatchStatusDebug(const VDP &vdp_)
 
 byte VDP::PaletteLatchStatusDebug::read(unsigned /*address*/)
 {
-	auto& vdp = OUTER(VDP, paletteLatchStatusDebug);
+	const auto& vdp = OUTER(VDP, paletteLatchStatusDebug);
 	return byte(vdp.paletteDataStored);
 }
 
@@ -1743,7 +1745,7 @@ VDP::DataLatchDebug::DataLatchDebug(const VDP &vdp_)
 
 byte VDP::DataLatchDebug::read(unsigned /*address*/)
 {
-	auto& vdp = OUTER(VDP, dataLatchDebug);
+	const auto& vdp = OUTER(VDP, dataLatchDebug);
 	return vdp.dataLatch;
 }
 

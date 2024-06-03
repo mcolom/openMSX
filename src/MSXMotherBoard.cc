@@ -235,7 +235,7 @@ MSXMotherBoard::MSXMotherBoard(Reactor& reactor_)
 		"Intended use is for scripts that create temporary machines "
 		"of which you don't want to see warning messages about blank "
 		"SRAM content or PSG port directions for instance.",
-		false, Setting::DONT_SAVE)
+		false, Setting::Save::NO)
 	, fastForwardHelper(make_unique<FastForwardHelper>(*this))
 	, settingObserver(make_unique<SettingObserver>(*this))
 	, powerSetting(reactor.getGlobalSettings().getPowerSetting())
@@ -403,7 +403,7 @@ string MSXMotherBoard::insertExtension(
 	}
 	string result = extension->getName();
 	extensions.push_back(std::move(extension));
-	getMSXCliComm().update(CliComm::EXTENSION, result, "add");
+	getMSXCliComm().update(CliComm::UpdateType::EXTENSION, result, "add");
 	return result;
 }
 
@@ -416,7 +416,7 @@ HardwareConfig* MSXMotherBoard::findExtension(std::string_view extensionName)
 void MSXMotherBoard::removeExtension(const HardwareConfig& extension)
 {
 	extension.testRemove();
-	getMSXCliComm().update(CliComm::EXTENSION, extension.getName(), "remove");
+	getMSXCliComm().update(CliComm::UpdateType::EXTENSION, extension.getName(), "remove");
 	auto it = rfind_unguarded(extensions, &extension,
 	                          [](auto& e) { return e.get(); });
 	extensions.erase(it);
@@ -771,13 +771,13 @@ AddRemoveUpdate::AddRemoveUpdate(MSXMotherBoard& motherBoard_)
 	: motherBoard(motherBoard_)
 {
 	motherBoard.getReactor().getGlobalCliComm().update(
-		CliComm::HARDWARE, motherBoard.getMachineID(), "add");
+		CliComm::UpdateType::HARDWARE, motherBoard.getMachineID(), "add");
 }
 
 AddRemoveUpdate::~AddRemoveUpdate()
 {
 	motherBoard.getReactor().getGlobalCliComm().update(
-		CliComm::HARDWARE, motherBoard.getMachineID(), "remove");
+		CliComm::UpdateType::HARDWARE, motherBoard.getMachineID(), "remove");
 }
 
 
@@ -865,8 +865,7 @@ ListExtCmd::ListExtCmd(MSXMotherBoard& motherBoard_)
 void ListExtCmd::execute(std::span<const TclObject> /*tokens*/, TclObject& result)
 {
 	result.addListElements(
-		view::transform(motherBoard.getExtensions(),
-		                [&](auto& e) { return e->getName(); }));
+		view::transform(motherBoard.getExtensions(), &HardwareConfig::getName));
 }
 
 string ListExtCmd::help(std::span<const TclObject> /*tokens*/) const
@@ -900,7 +899,7 @@ void ExtCmd::execute(std::span<const TclObject> tokens, TclObject& result,
 			: "any";
 		auto extension = motherBoard.loadExtension(name, slotName);
 		if (slotName != "any") {
-			auto& manager = motherBoard.getSlotManager();
+			const auto& manager = motherBoard.getSlotManager();
 			if (const auto* extConf = manager.getConfigForSlot(commandName[3] - 'a')) {
 				// still a cartridge inserted, (try to) remove it now
 				motherBoard.removeExtension(*extConf);
@@ -1018,11 +1017,10 @@ void MachineExtensionInfo::execute(std::span<const TclObject> tokens,
 	checkNumArgs(tokens, Between{2, 3}, Prefix{2}, "?extension-instance-name?");
 	if (tokens.size() == 2) {
 		result.addListElements(
-			view::transform(motherBoard.getExtensions(),
-					[&](auto& e) { return e->getName(); }));
+			view::transform(motherBoard.getExtensions(), &HardwareConfig::getName));
 	} else if (tokens.size() == 3) {
 		std::string_view extName = tokens[2].getString();
-		HardwareConfig* extension = motherBoard.findExtension(extName);
+		const HardwareConfig* extension = motherBoard.findExtension(extName);
 		if (!extension) {
 			throw CommandException("No such extension: ", extName);
 		}
@@ -1039,8 +1037,7 @@ void MachineExtensionInfo::execute(std::span<const TclObject> tokens,
 		}
 		TclObject deviceList;
 		deviceList.addListElements(
-			view::transform(extension->getDevices(),
-					[&](auto& e) { return e->getName(); }));
+			view::transform(extension->getDevices(), &MSXDevice::getName));
 		result.addDictKeyValue("devices", deviceList);
 	}
 }
@@ -1130,7 +1127,7 @@ void DeviceInfo::execute(std::span<const TclObject> tokens, TclObject& result) c
 		break;
 	case 3: {
 		std::string_view deviceName = tokens[2].getString();
-		MSXDevice* device = motherBoard.findDevice(deviceName);
+		const MSXDevice* device = motherBoard.findDevice(deviceName);
 		if (!device) {
 			throw CommandException("No such device: ", deviceName);
 		}

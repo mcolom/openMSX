@@ -153,7 +153,7 @@ static void cleanupImGui()
 }
 
 
-ImGuiManager::ImGuiManager(Reactor& reactor_, SettingsConfig& settingsConfig)
+ImGuiManager::ImGuiManager(Reactor& reactor_)
 	: reactor(reactor_)
 	, fontPropFilename(reactor.getCommandController(), "gui_font_default_filename", "TTF font filename for the default GUI font", "DejaVuSans.ttf.gz")
 	, fontMonoFilename(reactor.getCommandController(), "gui_font_mono_filename", "TTF font filename for the monospaced GUI font", "DejaVuSansMono.ttf.gz")
@@ -161,7 +161,6 @@ ImGuiManager::ImGuiManager(Reactor& reactor_, SettingsConfig& settingsConfig)
 	, fontMonoSize(reactor.getCommandController(), "gui_font_mono_size", "size for the monospaced GUI font", 13, 9, 72)
 	, windowPos{SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED}
 {
-	settingsConfig.setShortcuts(shortcuts);
 	parts.push_back(this);
 
 	// In order that they appear in the menubar
@@ -228,7 +227,7 @@ ImGuiManager::ImGuiManager(Reactor& reactor_, SettingsConfig& settingsConfig)
 	for (auto type : {MOUSE_BUTTON_UP, MOUSE_BUTTON_DOWN, MOUSE_MOTION, MOUSE_WHEEL,
 	                  KEY_UP, KEY_DOWN, TEXT,
 	                  WINDOW, FILE_DROP, IMGUI_DELAYED_ACTION, BREAK}) {
-		eventDistributor.registerEventListener(type, *this, EventDistributor::IMGUI);
+		eventDistributor.registerEventListener(type, *this, EventDistributor::Priority::IMGUI);
 	}
 
 	fontPropFilename.attach(*this);
@@ -353,19 +352,18 @@ void ImGuiManager::printError(std::string_view message)
 	getCliComm().printError(message);
 }
 
-int ImGuiManager::signalEvent(const Event& event)
+bool ImGuiManager::signalEvent(const Event& event)
 {
 	if (auto* evt = get_event_if<SdlEvent>(event)) {
 		const SDL_Event& sdlEvent = evt->getSdlEvent();
 		ImGui_ImplSDL2_ProcessEvent(&sdlEvent);
-		ImGuiIO& io = ImGui::GetIO();
+		const ImGuiIO& io = ImGui::GetIO();
 		if ((io.WantCaptureMouse &&
 		     sdlEvent.type == one_of(SDL_MOUSEMOTION, SDL_MOUSEWHEEL,
 		                             SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP)) ||
 		    (io.WantCaptureKeyboard &&
 		     sdlEvent.type == one_of(SDL_KEYDOWN, SDL_KEYUP, SDL_TEXTINPUT))) {
-			static constexpr auto block = EventDistributor::Priority(EventDistributor::IMGUI + 1);
-			return block; // block event for lower priority listeners
+			return true; // block event for lower priority listeners
 		}
 	} else {
 		switch (getType(event)) {
@@ -389,7 +387,7 @@ int ImGuiManager::signalEvent(const Event& event)
 			UNREACHABLE;
 		}
 	}
-	return 0;
+	return false;
 }
 
 void ImGuiManager::update(const Setting& /*setting*/) noexcept
@@ -418,7 +416,7 @@ static std::vector<std::string> getSlots(MSXMotherBoard* motherBoard)
 	std::vector<std::string> result;
 	if (!motherBoard) return result;
 
-	auto& slotManager = motherBoard->getSlotManager();
+	const auto& slotManager = motherBoard->getSlotManager();
 	std::string cartName = "cartX";
 	for (auto slot : xrange(CartridgeSlotManager::MAX_SLOTS)) {
 		if (!slotManager.slotExists(slot)) continue;
@@ -556,7 +554,7 @@ void ImGuiManager::paintImGui()
 				romInfo = nullptr;
 			}
 			selectedRomType = romInfo ? romInfo->getRomType()
-			                          : ROM_UNKNOWN; // auto-detect
+			                          : RomType::UNKNOWN; // auto-detect
 			ImGui::OpenPopup("select-cart");
 		} else if (category == "cassette") {
 			testMedia("casette port", "cassetteplayer");
@@ -638,7 +636,7 @@ void ImGuiManager::paintImGui()
 
 		if (ImGui::Button("Insert ROM")) {
 			auto cmd = makeTclList(selectedMedia, "insert", droppedFile);
-			if (selectedRomType != ROM_UNKNOWN) {
+			if (selectedRomType != RomType::UNKNOWN) {
 				cmd.addListElement("-romtype", RomInfo::romTypeToName(selectedRomType));
 			}
 			insert2(strCat("cartridge slot ", char(selectedMedia.back() - 'a' + 'A')), cmd);

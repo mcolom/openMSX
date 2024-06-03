@@ -47,8 +47,8 @@ HotKey::HotKey(RTScheduler& rtScheduler,
 	, deactivateCmd   (commandController_)
 	, commandController(commandController_)
 	, eventDistributor(eventDistributor_)
-	, listenerHigh(*this, EventDistributor::HOTKEY_HIGH)
-	, listenerLow (*this, EventDistributor::HOTKEY_LOW)
+	, listenerHigh(*this, EventDistributor::Priority::HOTKEY_HIGH)
+	, listenerLow (*this, EventDistributor::Priority::HOTKEY_LOW)
 {
 	initDefaultBindings();
 }
@@ -289,17 +289,17 @@ static HotKey::BindMap::const_iterator findMatch(
 void HotKey::executeRT()
 {
 	if (lastEvent) {
-		executeEvent(*lastEvent, EventDistributor::HOTKEY_HIGH);
-		executeEvent(*lastEvent, EventDistributor::HOTKEY_LOW);
+		executeEvent(*lastEvent, EventDistributor::Priority::HOTKEY_HIGH);
+		executeEvent(*lastEvent, EventDistributor::Priority::HOTKEY_LOW);
 	}
 }
 
-int HotKey::Listener::signalEvent(const Event& event)
+bool HotKey::Listener::signalEvent(const Event& event)
 {
 	return hotKey.signalEvent(event, priority);
 }
 
-int HotKey::signalEvent(const Event& event, EventDistributor::Priority priority)
+bool HotKey::signalEvent(const Event& event, EventDistributor::Priority priority)
 {
 	if (lastEvent && *lastEvent != event) {
 		// If the newly received event is different from the repeating
@@ -315,20 +315,19 @@ int HotKey::signalEvent(const Event& event, EventDistributor::Priority priority)
 	return executeEvent(event, priority);
 }
 
-int HotKey::executeEvent(const Event& event, EventDistributor::Priority priority)
+bool HotKey::executeEvent(const Event& event, EventDistributor::Priority priority)
 {
-	bool msx = priority == EventDistributor::HOTKEY_LOW;
-	auto block = EventDistributor::Priority(priority + 1); // lower priority than this listener
+	bool msx = priority == EventDistributor::Priority::HOTKEY_LOW;
 
 	// First search in active layers (from back to front)
 	bool blocking = false;
-	for (auto& info : view::reverse(activeLayers)) {
+	for (const auto& info : view::reverse(activeLayers)) {
 		auto& cmap = layerMap[info.layer]; // ok, if this entry doesn't exist yet
 		if (auto it = findMatch(cmap, event, msx); it != end(cmap)) {
 			executeBinding(event, *it);
 			// Deny event to lower priority listeners, also don't pass event
 			// to other layers (including the default layer).
-			return block;
+			return true;
 		}
 		blocking = info.blocking;
 		if (blocking) break; // don't try lower layers
@@ -337,12 +336,12 @@ int HotKey::executeEvent(const Event& event, EventDistributor::Priority priority
 	// If the event was not yet handled, try the default layer.
 	if (auto it = findMatch(cmdMap, event, msx); it != end(cmdMap)) {
 		executeBinding(event, *it);
-		return block; // deny event to lower priority listeners
+		return true; // deny event to lower priority listeners
 	}
 
 	// Event is not handled, only let it pass to the MSX if there was no
 	// blocking layer active.
-	return blocking ? block : 0;
+	return blocking;
 }
 
 void HotKey::executeBinding(const Event& event, const HotKeyInfo& info)
@@ -466,7 +465,7 @@ void HotKey::BindCmd::execute(std::span<const TclObject> tokens, TclObject& resu
 	case 0: {
 		// show all bounded keys (for this layer)
 		string r;
-		for (auto& p : cMap) {
+		for (const auto& p : cMap) {
 			r += formatBinding(p);
 		}
 		result = r;
@@ -593,7 +592,7 @@ void HotKey::ActivateCmd::execute(std::span<const TclObject> tokens, TclObject& 
 	switch (args.size()) {
 	case 0: {
 		string r;
-		for (auto& layerInfo : view::reverse(hotKey.activeLayers)) {
+		for (const auto& layerInfo : view::reverse(hotKey.activeLayers)) {
 			r += layerInfo.layer;
 			if (layerInfo.blocking) {
 				r += " -blocking";

@@ -22,12 +22,12 @@ MSXCPU::MSXCPU(MSXMotherBoard& motherboard_)
 	: motherboard(motherboard_)
 	, traceSetting(
 		motherboard.getCommandController(), "cputrace",
-		"CPU tracing on/off", false, Setting::DONT_SAVE)
+		"CPU tracing on/off", false, Setting::Save::NO)
 	, diHaltCallback(
 		motherboard.getCommandController(), "di_halt_callback",
 		"Tcl proc called when the CPU executed a DI/HALT sequence",
 		"default_di_halt_callback",
-		Setting::SaveSetting::SAVE) // user must be able to override
+		Setting::Save::YES) // user must be able to override
 	, z80(std::make_unique<CPUCore<Z80TYPE>>(
 		motherboard, "z80", traceSetting,
 		diHaltCallback, EmuTime::zero()))
@@ -87,11 +87,11 @@ void MSXCPU::doReset(EmuTime::param time)
 	reference = time;
 }
 
-void MSXCPU::setActiveCPU(CPUType cpu)
+void MSXCPU::setActiveCPU(Type cpu)
 {
-	if (cpu == CPU_R800) assert(r800);
+	if (cpu == Type::R800) assert(r800);
 
-	bool tmp = cpu == CPU_Z80;
+	bool tmp = cpu == Type::Z80;
 	if (tmp != z80Active) {
 		exitCPULoopSync();
 		newZ80Active = tmp;
@@ -384,7 +384,7 @@ MSXCPU::TimeInfoTopic::TimeInfoTopic(InfoCommand& machineInfoCommand)
 void MSXCPU::TimeInfoTopic::execute(
 	std::span<const TclObject> /*tokens*/, TclObject& result) const
 {
-	auto& cpu = OUTER(MSXCPU, timeInfo);
+	const auto& cpu = OUTER(MSXCPU, timeInfo);
 	EmuDuration dur = cpu.getCurrentTime() - cpu.reference;
 	result = dur.toDouble();
 }

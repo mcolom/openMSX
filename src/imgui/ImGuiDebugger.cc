@@ -180,7 +180,7 @@ void ImGuiDebugger::showMenu(MSXMotherBoard* motherBoard)
 		ImGui::MenuItem("Palette editor", nullptr, &manager.palette->window.open);
 		ImGui::Separator();
 		im::Menu("Add hex editor", [&]{
-			auto& debugger = motherBoard->getDebugger();
+			const auto& debugger = motherBoard->getDebugger();
 			auto debuggables = to_vector<std::pair<std::string, Debuggable*>>(debugger.getDebuggables());
 			ranges::sort(debuggables, StringOp::caseless{}, [](const auto& p) { return p.first; }); // sort on name
 			for (const auto& [name, debuggable] : debuggables) {
@@ -208,62 +208,101 @@ void ImGuiDebugger::paint(MSXMotherBoard* motherBoard)
 	drawFlags(regs);
 }
 
+void ImGuiDebugger::actionBreakContinue(MSXCPUInterface& cpuInterface)
+{
+	if (MSXCPUInterface::isBreaked()) {
+		cpuInterface.doContinue();
+	} else {
+		cpuInterface.doBreak();
+	}
+}
+void ImGuiDebugger::actionStepIn(MSXCPUInterface& cpuInterface)
+{
+	cpuInterface.doStep();
+}
+void ImGuiDebugger::actionStepOver()
+{
+	manager.executeDelayed(TclObject("step_over"));
+}
+void ImGuiDebugger::actionStepOut()
+{
+	manager.executeDelayed(TclObject("step_out"));
+}
+void ImGuiDebugger::actionStepBack()
+{
+	manager.executeDelayed(TclObject("step_back"),
+	                       [&](const TclObject&) { syncDisassemblyWithPC = true; });
+}
+
+void ImGuiDebugger::checkShortcuts(MSXCPUInterface& cpuInterface)
+{
+	using enum Shortcuts::ID;
+	const auto& shortcuts = manager.getShortcuts();
+
+	if (shortcuts.checkShortcut(DEBUGGER_BREAK_CONTINUE)) {
+		actionBreakContinue(cpuInterface);
+	}
+	if (shortcuts.checkShortcut(DEBUGGER_STEP_IN)) {
+		actionStepIn(cpuInterface);
+	}
+	if (shortcuts.checkShortcut(DEBUGGER_STEP_OVER)) {
+		actionStepOver();
+	}
+	if (shortcuts.checkShortcut(DEBUGGER_STEP_OUT)) {
+		actionStepOut();
+	}
+	if (shortcuts.checkShortcut(DEBUGGER_STEP_BACK)) {
+		actionStepBack();
+	}
+}
+
 void ImGuiDebugger::drawControl(MSXCPUInterface& cpuInterface)
 {
 	if (!showControl) return;
 	im::Window("Debugger tool bar", &showControl, [&]{
-		auto ButtonGlyph = [](const char* id, ImWchar c) {
+		checkShortcuts(cpuInterface);
+
+		auto ButtonGlyph = [&](const char* id, ImWchar c, Shortcuts::ID sid) {
 			const auto* font = ImGui::GetFont();
 			auto texId = font->ContainerAtlas->TexID;
 			const auto* g = font->FindGlyph(c);
 			bool result = ImGui::ImageButton(id, texId, {g->X1 - g->X0, g->Y1 - g->Y0}, {g->U0, g->V0}, {g->U1, g->V1});
-			simpleToolTip(id);
+			simpleToolTip([&]() -> std::string {
+				const auto& shortcuts = manager.getShortcuts();
+				const auto& shortcut = shortcuts.getShortcut(sid);
+				if (shortcut.keyChord == ImGuiKey_None) return id;
+				return strCat(id, " (", getKeyChordName(shortcut.keyChord), ')');
+			});
 			return result;
 		};
 
-		auto& shortcuts = manager.getShortcuts();
 		bool breaked = MSXCPUInterface::isBreaked();
 		using enum Shortcuts::ID;
-		if (breaked) {
-			if (shortcuts.checkShortcut(BREAK)) {
-				cpuInterface.doContinue();
-			}
-			if (ButtonGlyph("run", DEBUGGER_ICON_RUN)) {
-				cpuInterface.doContinue();
-			}
-		} else {
-			if (shortcuts.checkShortcut(BREAK)) {
-				cpuInterface.doBreak();
-			}
-			if (ButtonGlyph("break", DEBUGGER_ICON_BREAK)) {
-				cpuInterface.doBreak();
-			}
+		if (auto breakContinueIcon = breaked ? DEBUGGER_ICON_RUN : DEBUGGER_ICON_BREAK;
+		    ButtonGlyph("run", breakContinueIcon, DEBUGGER_BREAK_CONTINUE)) {
+			actionBreakContinue(cpuInterface);
 		}
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(50.0f);
 
 		im::Disabled(!breaked, [&]{
-			if (shortcuts.checkShortcut(STEP)) {
-				cpuInterface.doStep();
-			}
-			if (ButtonGlyph("step-in", DEBUGGER_ICON_STEP_IN)) {
-				cpuInterface.doStep();
+			if (ButtonGlyph("step-in", DEBUGGER_ICON_STEP_IN, DEBUGGER_STEP_IN)) {
+				actionStepIn(cpuInterface);
 			}
 			ImGui::SameLine();
 
-			if (ButtonGlyph("step-over", DEBUGGER_ICON_STEP_OVER)) {
-				manager.executeDelayed(TclObject("step_over"));
+			if (ButtonGlyph("step-over", DEBUGGER_ICON_STEP_OVER, DEBUGGER_STEP_OVER)) {
+				actionStepOver();
 			}
 			ImGui::SameLine();
 
-			if (ButtonGlyph("step-out",  DEBUGGER_ICON_STEP_OUT)) {
-				manager.executeDelayed(TclObject("step_out"));
+			if (ButtonGlyph("step-out",  DEBUGGER_ICON_STEP_OUT, DEBUGGER_STEP_OUT)) {
+				actionStepOut();
 			}
 			ImGui::SameLine();
 
-			if (ButtonGlyph("step-back", DEBUGGER_ICON_STEP_BACK)) {
-				manager.executeDelayed(TclObject("step_back"),
-				                       [&](const TclObject&) { syncDisassemblyWithPC = true; });
+			if (ButtonGlyph("step-back", DEBUGGER_ICON_STEP_BACK, DEBUGGER_STEP_BACK)) {
+				actionStepBack();
 			}
 		});
 	});
@@ -364,6 +403,8 @@ void ImGuiDebugger::drawDisassembly(CPURegs& regs, MSXCPUInterface& cpuInterface
 	if (!showDisassembly) return;
 	ImGui::SetNextWindowSize({340, 540}, ImGuiCond_FirstUseEver);
 	im::Window("Disassembly", &showDisassembly, [&]{
+		checkShortcuts(cpuInterface);
+
 		std::optional<BreakPoint> addBp;
 		std::optional<unsigned> removeBpId;
 
@@ -389,7 +430,7 @@ void ImGuiDebugger::drawDisassembly(CPURegs& regs, MSXCPUInterface& cpuInterface
 			ImGui::TableSetupColumn("mnemonic", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoHide);
 			ImGui::TableHeadersRow();
 
-			auto& guiBps = manager.breakPoints->getBps(cpuInterface);
+			auto& guiBps = manager.breakPoints->getBps();
 			auto textSize = ImGui::GetTextLineHeight();
 
 			std::string mnemonic;
@@ -509,6 +550,7 @@ void ImGuiDebugger::drawDisassembly(CPURegs& regs, MSXCPUInterface& cpuInterface
 
 						if (ImGui::TableNextColumn()) { // addr
 							bool focusScrollToAddress = false;
+							bool focusRunToAddress = false;
 
 							// do the full-row-selectable stuff in a column that cannot be hidden
 							auto pos = ImGui::GetCursorPos();
@@ -517,6 +559,10 @@ void ImGuiDebugger::drawDisassembly(CPURegs& regs, MSXCPUInterface& cpuInterface
 							if (manager.getShortcuts().checkShortcut(Shortcuts::ID::DISASM_GOTO_ADDR)) {
 								ImGui::OpenPopup("disassembly-context");
 								focusScrollToAddress = true;
+							}
+							if (manager.getShortcuts().checkShortcut(Shortcuts::ID::DISASM_RUN_TO_ADDR)) {
+								ImGui::OpenPopup("disassembly-context");
+								focusRunToAddress = true;
 							}
 							if (!bpRightClick && ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
 								ImGui::OpenPopup("disassembly-context");
@@ -562,6 +608,7 @@ void ImGuiDebugger::drawDisassembly(CPURegs& regs, MSXCPUInterface& cpuInterface
 								ImGui::AlignTextToFramePadding();
 								ImGui::TextUnformatted("Run to address:"sv);
 								ImGui::SameLine();
+								if (focusRunToAddress) ImGui::SetKeyboardFocusHere();
 								if (ImGui::InputText("##run", &runToAddr, ImGuiInputTextFlags_EnterReturnsTrue)) {
 									if (auto a = symbolManager.parseSymbolOrValue(runToAddr)) {
 										manager.executeDelayed(makeTclList("run_to", *a));

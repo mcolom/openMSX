@@ -139,7 +139,7 @@ void ImGuiReverseBar::showMenu(MSXMotherBoard* motherBoard)
 
 		ImGui::Separator();
 
-		auto& reverseManager = motherBoard->getReverseManager();
+		const auto& reverseManager = motherBoard->getReverseManager();
 		bool reverseEnabled = reverseManager.isCollecting();
 
 		im::Menu("Load replay ...", reverseEnabled, [&]{
@@ -152,8 +152,8 @@ void ImGuiReverseBar::showMenu(MSXMotherBoard* motherBoard)
 					std::string displayName;
 				};
 				std::vector<Names> names;
-				auto context = userDataFileContext(ReverseManager::REPLAY_DIR);
-				for (const auto& path : context.getPaths()) {
+				for (auto context = userDataFileContext(ReverseManager::REPLAY_DIR);
+				     const auto& path : context.getPaths()) {
 					foreach_file(path, [&](const std::string& fullName, std::string_view name) {
 						if (name.ends_with(ReverseManager::REPLAY_EXTENSION)) {
 							name.remove_suffix(ReverseManager::REPLAY_EXTENSION.size());
@@ -255,7 +255,7 @@ void ImGuiReverseBar::paint(MSXMotherBoard* motherBoard)
 {
 	if (!showReverseBar) return;
 	if (!motherBoard) return;
-	auto& reverseManager = motherBoard->getReverseManager();
+	const auto& reverseManager = motherBoard->getReverseManager();
 	if (!reverseManager.isCollecting()) return;
 
 	const auto& style = ImGui::GetStyle();

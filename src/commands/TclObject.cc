@@ -141,14 +141,14 @@ std::optional<double> TclObject::getOptionalDouble() const
 zstring_view TclObject::getString() const
 {
 	int length;
-	char* buf = Tcl_GetStringFromObj(obj, &length);
+	const char* buf = Tcl_GetStringFromObj(obj, &length);
 	return {buf, size_t(length)};
 }
 
 std::span<const uint8_t> TclObject::getBinary() const
 {
 	int length;
-	auto* buf = Tcl_GetByteArrayFromObj(obj, &length);
+	const auto* buf = Tcl_GetByteArrayFromObj(obj, &length);
 	return {buf, size_t(length)};
 }
 
@@ -248,8 +248,8 @@ TclObject TclObject::eval(Interpreter& interp_) const
 TclObject TclObject::executeCommand(Interpreter& interp_, bool compile)
 {
 	auto* interp = interp_.interp;
-	int flags = compile ? 0 : TCL_EVAL_DIRECT;
-	if (Tcl_EvalObjEx(interp, obj, flags) != TCL_OK) {
+	if (int flags = compile ? 0 : TCL_EVAL_DIRECT;
+	    Tcl_EvalObjEx(interp, obj, flags) != TCL_OK) {
 		throw CommandException(Tcl_GetStringResult(interp));
 	}
 	return TclObject(Tcl_GetObjResult(interp));

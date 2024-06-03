@@ -226,7 +226,7 @@ void PostProcessor::paint(OutputSurface& /*output*/)
 	int glow = renderSettings.getGlow();
 
 	if ((screen.getViewOffset() != ivec2()) || // any part of the screen not covered by the viewport?
-	    (deform == RenderSettings::DEFORM_3D) || !paintFrame) {
+	    (deform == RenderSettings::DisplayDeform::_3D) || !paintFrame) {
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 		if (!paintFrame) {
@@ -272,7 +272,7 @@ void PostProcessor::paint(OutputSurface& /*output*/)
 	}
 	renderedFrame.fbo.push();
 
-	for (auto& r : regions) {
+	for (const auto& r : regions) {
 		auto it = find_unguarded(textures, r.lineWidth, &TextureData::width);
 		auto* superImpose = superImposeVideoFrame
 		                  ? &superImposeTex : nullptr;
@@ -292,7 +292,7 @@ void PostProcessor::paint(OutputSurface& /*output*/)
 	auto [w, h] = screen.getViewSize();
 	glViewport(x, y, w, h);
 
-	if (deform == RenderSettings::DEFORM_3D) {
+	if (deform == RenderSettings::DisplayDeform::_3D) {
 		drawMonitor3D();
 	} else {
 		float x1 = (320.0f - float(horStretch)) * (1.0f / (2.0f * 320.0f));
@@ -301,7 +301,7 @@ void PostProcessor::paint(OutputSurface& /*output*/)
 			vec2(x1, 1), vec2(x1, 0), vec2(x2, 0), vec2(x2, 1)
 		};
 
-		auto& glContext = *gl::context;
+		const auto& glContext = *gl::context;
 		glContext.progTex.activate();
 		glUniform4f(glContext.unifTexColor,
 				1.0f, 1.0f, 1.0f, 1.0f);
@@ -345,7 +345,7 @@ std::unique_ptr<RawFrame> PostProcessor::rotateFrames(
 	bool doDeflicker   = false;
 	auto currType = finishedFrame->getField();
 	if (canDoInterlace) {
-		if (currType != FrameSource::FIELD_NONINTERLACED) {
+		if (currType != FrameSource::FieldType::NONINTERLACED) {
 			if (renderSettings.getDeinterlace()) {
 				doDeinterlace = true;
 				numRequired = 2;
@@ -393,7 +393,7 @@ std::unique_ptr<RawFrame> PostProcessor::rotateFrames(
 
 	// Setup the to-be-painted frame
 	if (doDeinterlace) {
-		if (currType == FrameSource::FIELD_ODD) {
+		if (currType == FrameSource::FieldType::ODD) {
 			deinterlacedFrame->init(lastFrames[1].get(), lastFrames[0].get());
 		} else {
 			deinterlacedFrame->init(lastFrames[0].get(), lastFrames[1].get());
@@ -402,7 +402,7 @@ std::unique_ptr<RawFrame> PostProcessor::rotateFrames(
 	} else if (doInterlace) {
 		interlacedFrame->init(
 			lastFrames[0].get(),
-			(currType == FrameSource::FIELD_ODD) ? 1 : 0);
+			(currType == FrameSource::FieldType::ODD) ? 1 : 0);
 		paintFrame = interlacedFrame.get();
 	} else if (doDeflicker) {
 		deflicker->init();
@@ -450,8 +450,8 @@ std::unique_ptr<RawFrame> PostProcessor::rotateFrames(
 void PostProcessor::update(const Setting& setting) noexcept
 {
 	VideoLayer::update(setting);
-	auto& noiseSetting = renderSettings.getNoiseSetting();
-	auto& horizontalStretch = renderSettings.getHorizontalStretchSetting();
+	const auto& noiseSetting = renderSettings.getNoiseSetting();
+	const auto& horizontalStretch = renderSettings.getHorizontalStretchSetting();
 	if (&setting == &noiseSetting) {
 		preCalcNoise(noiseSetting.getFloat());
 	} else if (&setting == &horizontalStretch) {
@@ -464,7 +464,7 @@ void PostProcessor::uploadFrame()
 	createRegions();
 
 	const unsigned srcHeight = paintFrame->getHeight();
-	for (auto& r : regions) {
+	for (const auto& r : regions) {
 		// upload data
 		// TODO get before/after data from scaler
 		int before = 1;
@@ -557,7 +557,7 @@ void PostProcessor::drawGlow(int glow)
 {
 	if ((glow == 0) || !storedFrame) return;
 
-	auto& glContext = *gl::context;
+	const auto& glContext = *gl::context;
 	glContext.progTex.activate();
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -657,7 +657,7 @@ void PostProcessor::drawNoise() const
 		noise + vec2(0.0f, 0.0f  ),
 	};
 
-	auto& glContext = *gl::context;
+	const auto& glContext = *gl::context;
 	glContext.progTex.activate();
 
 	glEnable(GL_BLEND);

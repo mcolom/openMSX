@@ -82,7 +82,7 @@ static constexpr uint8_t EBPB_SIGNATURE = 0x29;  // Extended BIOS Parameter Bloc
 // This particular combination of flags indicates that this dir entry is used
 // to store a long Unicode file name.
 // For details, read http://home.teleport.com/~brainy/lfn.htm
-static constexpr uint8_t T_MSX_LFN  = 0x0F; // LFN entry (long files names)
+static constexpr MSXDirEntry::AttribValue T_MSX_LFN(0x0F); // LFN entry (long files names)
 
 /** Transforms a cluster number towards the first sector of this cluster
   * The calculation uses info read fom the boot sector
@@ -194,7 +194,6 @@ void MSXtar::readLogicalSector(unsigned sector, SectorBuffer& buf)
 MSXtar::MSXtar(SectorAccessibleDisk& sectorDisk, const MsxChar2Unicode& msxChars_)
 	: disk(sectorDisk)
 	, msxChars(msxChars_)
-	, findFirstFreeClusterStart{0}
 {
 	if (disk.getNbSectors() == 0) {
 		throw MSXException("No disk inserted.");
@@ -944,7 +943,7 @@ TclObject MSXtar::dirRaw()
 
 			auto filename = msxToHostFileName(dirEntry.filename);
 			time_t time = DiskImageUtils::fromTimeDate(DiskImageUtils::FatTimeDate{dirEntry.time, dirEntry.date});
-			result.addListElement(makeTclList(filename, dirEntry.attrib, narrow<uint32_t>(time), dirEntry.size));
+			result.addListElement(makeTclList(filename, dirEntry.attrib.value, narrow<uint32_t>(time), dirEntry.size));
 		}
 	}
 	return result;
@@ -958,7 +957,7 @@ std::string MSXtar::dir()
 	for (unsigned i = 0; i < num; ++i) {
 		auto entry = list.getListIndexUnchecked(i);
 		auto filename = std::string(entry.getListIndexUnchecked(0).getString());
-		auto attrib = DiskImageUtils::formatAttrib(narrow<uint8_t>(entry.getListIndexUnchecked(1).getOptionalInt().value_or(0)));
+		auto attrib = DiskImageUtils::formatAttrib(MSXDirEntry::AttribValue(uint8_t(entry.getListIndexUnchecked(1).getOptionalInt().value_or(0))));
 		//time_t time = entry.getListIndexUnchecked(2).getOptionalInt().value_or(0); // ignored
 		auto size = entry.getListIndexUnchecked(3).getOptionalInt().value_or(0);
 
@@ -1009,7 +1008,7 @@ void MSXtar::chroot(string_view newRootDir, bool createDir)
 			auto [t, d] = DiskImageUtils::toTimeDate(now);
 			chrootSector = addSubdir(msxName, t, d, chrootSector);
 		} else {
-			auto& dirEntry = buf.dirEntry[entry.index];
+			const auto& dirEntry = buf.dirEntry[entry.index];
 			if (!(dirEntry.attrib & MSXDirEntry::Attrib::DIRECTORY)) {
 				throw MSXException(firstPart, " is not a directory.");
 			}
@@ -1055,7 +1054,7 @@ string MSXtar::singleItemExtract(string_view dirName, string_view itemName,
 		return strCat(itemName, " not found!\n");
 	}
 
-	auto& msxDirEntry = buf.dirEntry[entry.index];
+	const auto& msxDirEntry = buf.dirEntry[entry.index];
 	// create full name for local filesystem
 	string fullName = strCat(dirName, '/', msxToHostFileName(msxDirEntry.filename));
 

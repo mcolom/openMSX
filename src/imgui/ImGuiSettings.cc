@@ -103,7 +103,7 @@ void ImGuiSettings::setStyle() const
 		// This is O(M*N), if needed could be optimized to be O(M+N).
 		if (contains(mods, key)) continue; // skip: mods can't be primary keys in a KeyChord
 		if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(key))) {
-			ImGuiIO& io = ImGui::GetIO();
+			const ImGuiIO& io = ImGui::GetIO();
 			return key
 			     | (io.KeyCtrl  ? ImGuiMod_Ctrl  : 0)
 			     | (io.KeyShift ? ImGuiMod_Shift : 0)
@@ -122,7 +122,7 @@ void ImGuiSettings::showMenu(MSXMotherBoard* motherBoard)
 		auto& reactor = manager.getReactor();
 		auto& globalSettings = reactor.getGlobalSettings();
 		auto& renderSettings = reactor.getDisplay().getRenderSettings();
-		auto& settingsManager = reactor.getGlobalCommandController().getSettingsManager();
+		const auto& settingsManager = reactor.getGlobalCommandController().getSettingsManager();
 		const auto& hotKey = reactor.getHotKey();
 
 		im::Menu("Video", [&]{
@@ -135,14 +135,15 @@ void ImGuiSettings::showMenu(MSXMotherBoard* motherBoard)
 						bool hasScanline;
 						bool hasBlur;
 					};
+					using enum RenderSettings::ScaleAlgorithm;
 					static constexpr std::array algoEnables = {
-						//                                        scanline / blur
-						AlgoEnable{RenderSettings::SCALER_SIMPLE,     true,  true },
-						AlgoEnable{RenderSettings::SCALER_SCALE,      false, false},
-						AlgoEnable{RenderSettings::SCALER_HQ,         false, false},
-						AlgoEnable{RenderSettings::SCALER_HQLITE,     false, false},
-						AlgoEnable{RenderSettings::SCALER_RGBTRIPLET, true,  true },
-						AlgoEnable{RenderSettings::SCALER_TV,         true,  false},
+						//                 scanline / blur
+						AlgoEnable{SIMPLE,     true,  true },
+						AlgoEnable{SCALE,      false, false},
+						AlgoEnable{HQ,         false, false},
+						AlgoEnable{HQLITE,     false, false},
+						AlgoEnable{RGBTRIPLET, true,  true },
+						AlgoEnable{TV,         true,  false},
 					};
 					auto it = ranges::find(algoEnables, scaler.getEnum(), &AlgoEnable::algo);
 					assert(it != algoEnables.end());
@@ -223,8 +224,8 @@ void ImGuiSettings::showMenu(MSXMotherBoard* motherBoard)
 				bool fwdChanged = ImGui::RadioButton("normal", &fastForward, 0);
 				ImGui::SameLine();
 				fwdChanged |= ImGui::RadioButton("fast forward", &fastForward, 1);
-				auto fastForwardShortCut = getShortCutForCommand(reactor.getHotKey(), "toggle fastforward");
-				if (!fastForwardShortCut.empty()) {
+				if (auto fastForwardShortCut = getShortCutForCommand(reactor.getHotKey(), "toggle fastforward");
+				    !fastForwardShortCut.empty()) {
 					HelpMarker(strCat("Use '", fastForwardShortCut ,"' to quickly toggle between these two"));
 				}
 				if (fwdChanged) {
@@ -296,7 +297,7 @@ void ImGuiSettings::showMenu(MSXMotherBoard* motherBoard)
 				EnumToolTip{"POSITIONAL", "Tries to map the keyboard key positions to the MSX keyboard key positions"},
 			};
 			if (motherBoard) {
-				auto& controller = motherBoard->getMSXCommandController();
+				const auto& controller = motherBoard->getMSXCommandController();
 				if (auto* turbo = dynamic_cast<IntegerSetting*>(controller.findSetting("renshaturbo"))) {
 					SliderInt("Ren Sha Turbo (%)", *turbo);
 				}
@@ -309,8 +310,8 @@ void ImGuiSettings::showMenu(MSXMotherBoard* motherBoard)
 		im::Menu("GUI", [&]{
 			auto getExistingLayouts = [] {
 				std::vector<std::string> names;
-				auto context = userDataFileContext("layouts");
-				for (const auto& path : context.getPaths()) {
+				for (auto context = userDataFileContext("layouts");
+				     const auto& path : context.getPaths()) {
 					foreach_file(path, [&](const std::string& fullName, std::string_view name) {
 						if (name.ends_with(".ini")) {
 							names.emplace_back(fullName);
@@ -340,8 +341,7 @@ void ImGuiSettings::showMenu(MSXMotherBoard* motherBoard)
 				return selectedLayout;
 			};
 			im::Menu("Save layout", [&]{
-				auto names = getExistingLayouts();
-				if (!names.empty()) {
+				if (auto names = getExistingLayouts(); !names.empty()) {
 					ImGui::TextUnformatted("Existing layouts"sv);
 					if (auto selectedLayout = listExistingLayouts(names)) {
 						const auto& [name, displayName] = *selectedLayout;
@@ -381,7 +381,7 @@ void ImGuiSettings::showMenu(MSXMotherBoard* motherBoard)
 			});
 			im::Menu("Select style", [&]{
 				std::optional<int> newStyle;
-				std::array names = {"Dark", "Light", "Classic"}; // must be in sync with setStyle()
+				static constexpr std::array names = {"Dark", "Light", "Classic"}; // must be in sync with setStyle()
 				for (auto i : xrange(narrow<int>(names.size()))) {
 					if (ImGui::Selectable(names[i], selectedStyle == i)) {
 						newStyle = i;
@@ -495,21 +495,12 @@ void ImGuiSettings::showMenu(MSXMotherBoard* motherBoard)
 			return strCat(joystickManager.getDisplayName(j.getJoystick()), " button ", j.getButton());
 		},
 		[&](const BooleanJoystickHat& h) {
-			const char* str = [&] {
-				switch (h.getValue()) {
-					case BooleanJoystickHat::UP:    return "up";
-					case BooleanJoystickHat::RIGHT: return "right";
-					case BooleanJoystickHat::DOWN:  return "down";
-					case BooleanJoystickHat::LEFT:  return "left";
-					default: UNREACHABLE;
-				}
-			}();
-			return strCat(joystickManager.getDisplayName(h.getJoystick()), " D-pad ", h.getHat(), ' ', str);
+			return strCat(joystickManager.getDisplayName(h.getJoystick()), " D-pad ", h.getHat(), ' ', toString(h.getValue()));
 		},
 		[&](const BooleanJoystickAxis& a) {
 			return strCat(joystickManager.getDisplayName(a.getJoystick()),
 			              " stick axis ", a.getAxis(), ", ",
-			              (a.getDirection() == BooleanJoystickAxis::POS ? "positive" : "negative"), " direction");
+			              (a.getDirection() == BooleanJoystickAxis::Direction::POS ? "positive" : "negative"), " direction");
 		}
 	}, input);
 }
@@ -665,7 +656,7 @@ static void drawLetterZ(gl::vec2 center)
 
 namespace msxjoystick {
 
-enum {UP, DOWN, LEFT, RIGHT, TRIG_A, TRIG_B, NUM_BUTTONS, NUM_DIRECTIONS = TRIG_A};
+enum {UP, DOWN, LEFT, RIGHT, TRIG_A, TRIG_B, NUM_BUTTONS};
 
 static constexpr std::array<zstring_view, NUM_BUTTONS> buttonNames = {
 	"Up", "Down", "Left", "Right", "A", "B" // show in the GUI
@@ -728,7 +719,7 @@ enum {UP, DOWN, LEFT, RIGHT,
       TRIG_A, TRIG_B, TRIG_C,
       TRIG_X, TRIG_Y, TRIG_Z,
       TRIG_SELECT, TRIG_START,
-      NUM_BUTTONS, NUM_DIRECTIONS = TRIG_A};
+      NUM_BUTTONS};
 
 static constexpr std::array<zstring_view, NUM_BUTTONS> buttonNames = { // show in the GUI
 	"Up", "Down", "Left", "Right",
@@ -870,8 +861,8 @@ void ImGuiSettings::paintJoystick(MSXMotherBoard& motherBoard)
 			}
 		});
 
-		auto& joystickManager = manager.getReactor().getInputEventGenerator().getJoystickManager();
-		auto& controller = motherBoard.getMSXCommandController();
+		const auto& joystickManager = manager.getReactor().getInputEventGenerator().getJoystickManager();
+		const auto& controller = motherBoard.getMSXCommandController();
 		auto* setting = dynamic_cast<StringSetting*>(controller.findSetting(settingName(joystick)));
 		if (!setting) return;
 		auto& interp = setting->getInterpreter();
@@ -1247,8 +1238,8 @@ void ImGuiSettings::paintShortcut()
 			ImGui::TableSetupColumn("description");
 			ImGui::TableSetupColumn("key");
 
-			auto& shortcuts = manager.getShortcuts();
-			im::ID_for_range(Shortcuts::ID::NUM_SHORTCUTS, [&](int i) {
+			const auto& shortcuts = manager.getShortcuts();
+			im::ID_for_range(to_underlying(Shortcuts::ID::NUM), [&](int i) {
 				auto id = static_cast<Shortcuts::ID>(i);
 				auto shortcut = shortcuts.getShortcut(id);
 
@@ -1284,8 +1275,8 @@ void ImGuiSettings::paint(MSXMotherBoard* motherBoard)
 std::span<const std::string> ImGuiSettings::getAvailableFonts()
 {
 	if (availableFonts.empty()) {
-		const auto& context = systemFileContext();
-		for (const auto& path : context.getPaths()) {
+		for (const auto& context = systemFileContext();
+		     const auto& path : context.getPaths()) {
 			foreach_file(FileOperations::join(path, "skins"), [&](const std::string& /*fullName*/, std::string_view name) {
 				if (name.ends_with(".ttf.gz") || name.ends_with(".ttf")) {
 					availableFonts.emplace_back(name);
@@ -1299,20 +1290,16 @@ std::span<const std::string> ImGuiSettings::getAvailableFonts()
 	return availableFonts;
 }
 
-int ImGuiSettings::signalEvent(const Event& event)
+bool ImGuiSettings::signalEvent(const Event& event)
 {
 	bool msxOrMega = joystick < 2;
 	using SP = std::span<const zstring_view>;
 	auto keyNames = msxOrMega ? SP{msxjoystick::keyNames}
 	                          : SP{joymega    ::keyNames};
-	const auto numButtons = keyNames.size();
-
-	if (popupForKey >= numButtons) {
+	if (const auto numButtons = keyNames.size(); popupForKey >= numButtons) {
 		deinitListener();
-		return 0; // don't block
+		return false; // don't block
 	}
-
-	static constexpr auto block = EventDistributor::Priority(EventDistributor::IMGUI + 1); // lower priority than this listener
 
 	bool escape = false;
 	if (const auto* keyDown = get_event_if<KeyDownEvent>(event)) {
@@ -1320,19 +1307,19 @@ int ImGuiSettings::signalEvent(const Event& event)
 	}
 	if (!escape) {
 		auto getJoyDeadZone = [&](JoystickId joyId) {
-			auto& joyMan = manager.getReactor().getInputEventGenerator().getJoystickManager();
-			auto* setting = joyMan.getJoyDeadZoneSetting(joyId);
+			const auto& joyMan = manager.getReactor().getInputEventGenerator().getJoystickManager();
+			const auto* setting = joyMan.getJoyDeadZoneSetting(joyId);
 			return setting ? setting->getInt() : 0;
 		};
 		auto b = captureBooleanInput(event, getJoyDeadZone);
-		if (!b) return block; // keep popup active
+		if (!b) return true; // keep popup active
 		auto bs = toString(*b);
 
 		auto* motherBoard = manager.getReactor().getMotherBoard();
-		if (!motherBoard) return block;
-		auto& controller = motherBoard->getMSXCommandController();
+		if (!motherBoard) return true;
+		const auto& controller = motherBoard->getMSXCommandController();
 		auto* setting = dynamic_cast<StringSetting*>(controller.findSetting(settingName(joystick)));
-		if (!setting) return block;
+		if (!setting) return true;
 		auto& interp = setting->getInterpreter();
 
 		TclObject bindings = setting->getValue();
@@ -1347,7 +1334,7 @@ int ImGuiSettings::signalEvent(const Event& event)
 	}
 
 	popupForKey = unsigned(-1); // close popup
-	return block; // block event
+	return true; // block event
 }
 
 void ImGuiSettings::initListener()

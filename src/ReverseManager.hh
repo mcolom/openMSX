@@ -76,9 +76,7 @@ public:
 
 private:
 	struct ReverseChunk {
-		ReverseChunk() : time(EmuTime::zero()) {}
-
-		EmuTime time;
+		EmuTime time = EmuTime::zero();
 		std::vector<std::shared_ptr<DeltaBlock>> deltaBlocks;
 		MemBuffer<uint8_t> savestate;
 		size_t size;
@@ -148,7 +146,7 @@ private:
 	[[nodiscard]] EmuTime::param getCurrentTime() const { return syncNewSnapshot.getCurrentTime(); }
 
 	// EventListener
-	int signalEvent(const Event& event) override;
+	bool signalEvent(const Event& event) override;
 
 private:
 	MSXMotherBoard& motherBoard;

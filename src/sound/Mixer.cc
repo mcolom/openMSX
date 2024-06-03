@@ -1,13 +1,17 @@
 #include "Mixer.hh"
+
 #include "MSXMixer.hh"
 #include "NullSoundDriver.hh"
 #include "SDLSoundDriver.hh"
-#include "CommandController.hh"
+
 #include "CliComm.hh"
+#include "CommandController.hh"
 #include "MSXException.hh"
+
 #include "one_of.hh"
 #include "stl.hh"
 #include "unreachable.hh"
+
 #include <cassert>
 #include <memory>
 
@@ -22,8 +26,8 @@ static constexpr int defaultSamples = 1024;
 static EnumSetting<Mixer::SoundDriverType>::Map getSoundDriverMap()
 {
 	EnumSetting<Mixer::SoundDriverType>::Map soundDriverMap = {
-		{ "null", Mixer::SND_NULL },
-		{ "sdl",  Mixer::SND_SDL } };
+		{ "null", Mixer::SoundDriverType::NONE },
+		{ "sdl",  Mixer::SoundDriverType::SDL } };
 	return soundDriverMap;
 }
 
@@ -33,10 +37,10 @@ Mixer::Mixer(Reactor& reactor_, CommandController& commandController_)
 	, soundDriverSetting(
 		commandController, "sound_driver",
 		"select the sound output driver",
-		Mixer::SND_SDL, getSoundDriverMap())
+		Mixer::SoundDriverType::SDL, getSoundDriverMap())
 	, muteSetting(
 		commandController, "mute",
-		"(un)mute the emulation sound", false, Setting::DONT_SAVE)
+		"(un)mute the emulation sound", false, Setting::Save::NO)
 	, masterVolume(
 		commandController, "master_volume",
 		"master volume", 75, 0, 100)
@@ -79,10 +83,10 @@ void Mixer::reloadDriver()
 
 	try {
 		switch (soundDriverSetting.getEnum()) {
-		case SND_NULL:
+		case SoundDriverType::NONE:
 			driver = std::make_unique<NullSoundDriver>();
 			break;
-		case SND_SDL:
+		case SoundDriverType::SDL:
 			driver = std::make_unique<SDLSoundDriver>(
 				reactor,
 				frequencySetting.getInt(),

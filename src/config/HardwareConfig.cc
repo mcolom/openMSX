@@ -155,7 +155,6 @@ std::string_view HardwareConfig::getRomFilename() const
 HardwareConfig::HardwareConfig(MSXMotherBoard& motherBoard_, std::string hwName_)
 	: motherBoard(motherBoard_)
 	, hwName(std::move(hwName_))
-	, config(8192) // tweak: initial allocator buffer size
 {
 	for (auto& sub : externalSlots) {
 		ranges::fill(sub, false);
@@ -216,7 +215,7 @@ void HardwareConfig::testRemove() const
 		(*rit)->testRemove(alreadyRemoved);
 	}
 
-	auto& slotManager = motherBoard.getSlotManager();
+	const auto& slotManager = motherBoard.getSlotManager();
 	for (auto ps : xrange(4)) {
 		for (auto ss : xrange(4)) {
 			if (externalSlots[ps][ss]) {

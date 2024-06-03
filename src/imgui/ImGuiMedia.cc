@@ -52,7 +52,7 @@ void ImGuiMedia::save(ImGuiTextBuffer& buf)
 		for (const auto& patch : item.ipsPatches) {
 			buf.appendf("%s.patch=%s\n", name.c_str(), patch.c_str());
 		}
-		if (item.romType != ROM_UNKNOWN) {
+		if (item.romType != RomType::UNKNOWN) {
 			buf.appendf("%s.romType=%s\n", name.c_str(),
 				std::string(RomInfo::romTypeToName(item.romType)).c_str());
 		}
@@ -122,7 +122,7 @@ void ImGuiMedia::loadLine(std::string_view name, zstring_view value)
 		} else if (suffix == "patch") {
 			item.ipsPatches.emplace_back(value);
 		} else if (suffix == "romType") {
-			if (auto type = RomInfo::nameToRomType(value); type != ROM_UNKNOWN) {
+			if (auto type = RomInfo::nameToRomType(value); type != RomType::UNKNOWN) {
 				item.romType = type;
 			}
 		}
@@ -238,7 +238,7 @@ template<std::invocable<const std::string&> DisplayFunc = std::identity>
 static std::string display(const ImGuiMedia::MediaItem& item, DisplayFunc displayFunc = {})
 {
 	std::string result = displayFunc(item.name);
-	if (item.romType != ROM_UNKNOWN) {
+	if (item.romType != RomType::UNKNOWN) {
 		strAppend(result, " (", RomInfo::romTypeToName(item.romType), ')');
 	}
 	if (auto n = item.ipsPatches.size()) {
@@ -285,7 +285,7 @@ const std::string& ImGuiMedia::getTestResult(ExtensionInfo& info)
 					// Incomplete installation!! Missing C-BIOS machines!
 					// Do a minimal attempt to recover.
 					try {
-						if (auto* current = reactor.getMotherBoard()) {
+						if (const auto* current = reactor.getMotherBoard()) {
 							mb.emplace(reactor); // need to recreate the motherboard
 							mb->getMSXCliComm().setSuppressMessages(true);
 							mb->loadMachine(std::string(current->getMachineName()));
@@ -327,7 +327,7 @@ std::string ImGuiMedia::displayNameForRom(const std::string& filename, bool comp
 {
 	auto& reactor = manager.getReactor();
 	if (auto sha1 = reactor.getFilePool().getSha1Sum(filename)) {
-		auto& database = reactor.getSoftwareDatabase();
+		const auto& database = reactor.getSoftwareDatabase();
 		if (const auto* romInfo = database.fetchRomInfo(*sha1)) {
 			if (auto title = romInfo->getTitle(database.getBufferStart());
 				!title.empty()) {
@@ -441,7 +441,10 @@ void ImGuiMedia::showMenu(MSXMotherBoard* motherBoard)
 	im::Menu("Media", motherBoard != nullptr, [&]{
 		auto& interp = manager.getInterpreter();
 
-		enum { NONE, ITEM, SEPARATOR } status = NONE;
+		enum class Status { NONE, ITEM, SEPARATOR };
+		using enum Status;
+		Status status = NONE;
+
 		auto endGroup = [&] {
 			if (status == ITEM) status = SEPARATOR;
 		};
@@ -483,7 +486,7 @@ void ImGuiMedia::showMenu(MSXMotherBoard* motherBoard)
 
 		// cartA / extX
 		elementInGroup();
-		auto& slotManager = motherBoard->getSlotManager();
+		const auto& slotManager = motherBoard->getSlotManager();
 		bool anySlot = false;
 		for (auto i : xrange(CartridgeSlotManager::MAX_SLOTS)) {
 			if (!slotManager.slotExists(i)) continue;
@@ -698,7 +701,7 @@ void ImGuiMedia::paint(MSXMotherBoard* motherBoard)
 		}
 	}
 
-	auto& slotManager = motherBoard->getSlotManager();
+	const auto& slotManager = motherBoard->getSlotManager();
 	for (auto i : xrange(CartridgeSlotManager::MAX_SLOTS)) {
 		if (!slotManager.slotExists(i)) continue;
 		if (cartridgeMediaInfo[i].show) {
@@ -753,7 +756,7 @@ bool ImGuiMedia::selectRecent(ItemGroup& group, function_ref<std::string(const s
 	auto preview = leftClip(displayFunc(group.edit.name), textWidth);
 	im::Combo("##recent", preview.c_str(), [&]{
 		int count = 0;
-		for (auto& item : group.recent) {
+		for (const auto& item : group.recent) {
 			auto d = strCat(display(item, displayFunc), "##", count++);
 			if (ImGui::Selectable(d.c_str())) {
 				group.edit = item;
@@ -837,13 +840,13 @@ bool ImGuiMedia::selectDirectory(ItemGroup& group, const std::string& title, zst
 bool ImGuiMedia::selectMapperType(const char* label, RomType& romType)
 {
 	bool interacted = false;
-	bool isAutoDetect = romType == ROM_UNKNOWN;
+	bool isAutoDetect = romType == RomType::UNKNOWN;
 	constexpr const char* autoStr = "auto detect";
 	std::string current = isAutoDetect ? autoStr : std::string(RomInfo::romTypeToName(romType));
 	im::Combo(label, current.c_str(), [&]{
 		if (ImGui::Selectable(autoStr, isAutoDetect)) {
 			interacted = true;
-			romType = ROM_UNKNOWN;
+			romType = RomType::UNKNOWN;
 		}
 		int count = 0;
 		for (const auto& romInfo : RomInfo::getRomTypeInfo()) {
@@ -1076,7 +1079,7 @@ static void printRomInfo(ImGuiManager& manager, const TclObject& mediaTopic, std
 			ImGui::TextUnformatted(leftClip(filename, ImGui::GetContentRegionAvail().x));
 		}
 
-		auto& database = manager.getReactor().getSoftwareDatabase();
+		const auto& database = manager.getReactor().getSoftwareDatabase();
 		const auto* romInfo = [&]() -> const RomInfo* {
 			if (auto actual = mediaTopic.getOptionalDictValue(TclObject("actualSHA1"))) {
 				if (const auto* info = database.fetchRomInfo(Sha1Sum(actual->getString()))) {
@@ -1097,7 +1100,7 @@ static void printRomInfo(ImGuiManager& manager, const TclObject& mediaTopic, std
 		std::string mapperStr{RomInfo::romTypeToName(romType)};
 		if (romInfo) {
 			if (auto dbType = romInfo->getRomType();
-			dbType != ROM_UNKNOWN && dbType != romType) {
+			dbType != RomType::UNKNOWN && dbType != romType) {
 				strAppend(mapperStr, " (database: ", RomInfo::romTypeToName(dbType), ')');
 			}
 		}
@@ -1136,11 +1139,11 @@ TclObject ImGuiMedia::showCartridgeInfo(std::string_view mediaName, CartridgeMed
 	im::Disabled(disableEject, [&]{
 		copyCurrent = ImGui::SmallButton("Current cartridge");
 	});
-	auto& slotManager = manager.getReactor().getMotherBoard()->getSlotManager();
+	const auto& slotManager = manager.getReactor().getMotherBoard()->getSlotManager();
 	ImGui::SameLine();
 	ImGui::TextUnformatted(tmpStrCat("(slot ", slotManager.getPsSsString(slot), ')'));
 
-	RomType currentRomType = ROM_UNKNOWN;
+	RomType currentRomType = RomType::UNKNOWN;
 	im::Indent([&]{
 		if (selectType == SELECT_EMPTY_SLOT) {
 			ImGui::TextUnformatted("No cartridge inserted"sv);
@@ -1462,8 +1465,8 @@ void ImGuiMedia::cassetteMenu(const TclObject& cmdResult)
 			};
 			ImGui::Text("%s / %s", format(pos).c_str(), format(length).c_str());
 
-			auto& reactor = manager.getReactor();
-			auto& controller = reactor.getMotherBoard()->getMSXCommandController();
+			const auto& reactor = manager.getReactor();
+			const auto& controller = reactor.getMotherBoard()->getMSXCommandController();
 			const auto& hotKey = reactor.getHotKey();
 			if (auto* autoRun = dynamic_cast<BooleanSetting*>(controller.findSetting("autoruncassettes"))) {
 				Checkbox(hotKey, "(try to) Auto Run", *autoRun);
@@ -1493,7 +1496,7 @@ void ImGuiMedia::insertMedia(std::string_view mediaName, ItemGroup& group)
 	for (const auto& patch : item.ipsPatches) {
 		cmd.addListElement("-ips", patch);
 	}
-	if (item.romType != ROM_UNKNOWN) {
+	if (item.romType != RomType::UNKNOWN) {
 		cmd.addListElement("-romtype", RomInfo::romTypeToName(item.romType));
 	}
 	manager.executeDelayed(cmd,

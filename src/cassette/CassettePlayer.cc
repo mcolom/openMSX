@@ -100,7 +100,7 @@ CassettePlayer::CassettePlayer(const HardwareConfig& hwConf)
 	motherBoard.getReactor().getEventDistributor().registerEventListener(
 		EventType::BOOT, *this);
 	motherBoard.registerMediaInfo(getCassettePlayerName(), *this);
-	motherBoard.getMSXCliComm().update(CliComm::HARDWARE, getCassettePlayerName(), "add");
+	motherBoard.getMSXCliComm().update(CliComm::UpdateType::HARDWARE, getCassettePlayerName(), "add");
 
 	removeTape(EmuTime::zero());
 }
@@ -114,7 +114,7 @@ CassettePlayer::~CassettePlayer()
 	motherBoard.getReactor().getEventDistributor().unregisterEventListener(
 		EventType::BOOT, *this);
 	motherBoard.unregisterMediaInfo(*this);
-	motherBoard.getMSXCliComm().update(CliComm::HARDWARE, getCassettePlayerName(), "remove");
+	motherBoard.getMSXCliComm().update(CliComm::UpdateType::HARDWARE, getCassettePlayerName(), "remove");
 }
 
 void CassettePlayer::getMediaInfo(TclObject& result)
@@ -312,7 +312,7 @@ void CassettePlayer::setState(State newState, const Filename& newImage,
 		lastY = 0.0;
 	}
 	motherBoard.getMSXCliComm().update(
-		CliComm::STATUS, "cassetteplayer", getStateString());
+		CliComm::UpdateType::STATUS, "cassetteplayer", getStateString());
 
 	updateLoadingState(time); // sets SP for tape-end detection
 
@@ -336,7 +336,7 @@ void CassettePlayer::setImageName(const Filename& newImage)
 {
 	casImage = newImage;
 	motherBoard.getMSXCliComm().update(
-		CliComm::MEDIA, "cassetteplayer", casImage.getResolved());
+		CliComm::UpdateType::MEDIA, "cassetteplayer", casImage.getResolved());
 }
 
 void CassettePlayer::insertTape(const Filename& filename, EmuTime::param time)
@@ -608,7 +608,7 @@ float CassettePlayer::getAmplificationFactorImpl() const
 	return playImage ? playImage->getAmplificationFactorImpl() : 1.0f;
 }
 
-int CassettePlayer::signalEvent(const Event& event)
+bool CassettePlayer::signalEvent(const Event& event)
 {
 	if (getType(event) == EventType::BOOT && !getImageName().empty()) {
 		// Reinsert tape to make sure everything is reset.
@@ -619,7 +619,7 @@ int CassettePlayer::signalEvent(const Event& event)
 				"Failed to insert tape: ", e.getMessage());
 		}
 	}
-	return 0;
+	return false;
 }
 
 void CassettePlayer::execEndOfTape(EmuTime::param time)
@@ -881,7 +881,7 @@ template<typename Archive>
 void CassettePlayer::serialize(Archive& ar, unsigned version)
 {
 	if (recordImage) {
-		// buf, sampcnt
+		// buf, sampCnt
 		flushOutput();
 	}
 

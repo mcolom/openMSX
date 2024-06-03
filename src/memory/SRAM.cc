@@ -20,7 +20,6 @@ namespace openmsx {
 // For use in unit-tests.
 SRAM::SRAM(size_t size, const XMLElement& xml, DontLoadTag)
 	: ram(xml, size)
-	, header(nullptr) // not used
 {
 }
 
@@ -31,7 +30,6 @@ SRAM::SRAM(size_t size, const XMLElement& xml, DontLoadTag)
 SRAM::SRAM(const std::string& name, static_string_view description,
            size_t size, const DeviceConfig& config_, DontLoadTag)
 	: ram(config_, name, description, size)
-	, header(nullptr) // not used
 {
 }
 
@@ -57,7 +55,8 @@ SRAM::SRAM(const std::string& name, static_string_view description, size_t size,
 
 SRAM::~SRAM()
 {
-	if (schedulable) {
+	if (schedulable && schedulable->isPendingRT()) {
+		schedulable->cancelRT();
 		save();
 	}
 }
@@ -88,7 +87,7 @@ void SRAM::load(bool* loaded)
 	try {
 		bool headerOk = true;
 		File file(config.getFileContext().resolveCreate(filename),
-			  File::LOAD_PERSISTENT);
+			  File::OpenMode::LOAD_PERSISTENT);
 		if (header) {
 			size_t length = strlen(header);
 			VLA(char, buf, length);
@@ -104,9 +103,7 @@ void SRAM::load(bool* loaded)
 				"Warning no correct SRAM file: ", filename);
 		}
 	} catch (FileNotFoundException& /*e*/) {
-		config.getCliComm().printInfo(
-			"SRAM file ", filename, " not found, "
-			"assuming blank SRAM content.");
+		// SRAM file not found, assuming blank SRAM content.
 	} catch (FileException& e) {
 		config.getCliComm().printWarning(
 			"Couldn't load SRAM ", filename,
@@ -120,7 +117,7 @@ void SRAM::save() const
 	const auto& filename = config.getChildData("sramname");
 	try {
 		File file(config.getFileContext().resolveCreate(filename),
-			  File::SAVE_PERSISTENT);
+			  File::OpenMode::SAVE_PERSISTENT);
 		if (header) {
 			auto length = strlen(header);
 			file.write(std::span{header, length});

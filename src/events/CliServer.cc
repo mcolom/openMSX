@@ -29,7 +29,7 @@ namespace openmsx {
 #if defined(_WIN32)
 	return "default";
 #else
-	struct passwd* pw = getpwuid(getuid());
+	const struct passwd* pw = getpwuid(getuid());
 	return pw->pw_name ? pw->pw_name : std::string{};
 #endif
 }
@@ -202,7 +202,6 @@ CliServer::CliServer(CommandController& commandController_,
 	: commandController(commandController_)
 	, eventDistributor(eventDistributor_)
 	, cliComm(cliComm_)
-	, listenSock(OPENMSX_INVALID_SOCKET)
 {
 	try {
 		listenSock = createSocket();

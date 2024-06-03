@@ -11,6 +11,8 @@
 #include "one_of.hh"
 #include "ranges.hh"
 #include "serialize.hh"
+#include "serialize_stl.hh"
+#include "stl.hh"
 #include "xrange.hh"
 #include <bit>
 #include <cassert>
@@ -19,28 +21,18 @@
 
 namespace openmsx {
 
-AmdFlash::AmdFlash(const Rom& rom, std::span<const SectorInfo> sectorInfo_,
-                   uint16_t ID_, Addressing addressing_,
-                   const DeviceConfig& config, Load load)
-	: motherBoard(config.getMotherBoard())
-	, sectorInfo(sectorInfo_)
-	, sz(sum(sectorInfo, &SectorInfo::size))
-	, ID(ID_)
-	, addressing(addressing_)
+AmdFlash::AmdFlash(const Rom& rom, const ValidatedChip& validatedChip,
+                   std::span<const bool> writeProtectSectors,
+                   const DeviceConfig& config)
+	: AmdFlash(rom.getName() + "_flash", validatedChip, &rom, writeProtectSectors, config)
 {
-	init(rom.getName() + "_flash", config, load, &rom);
 }
 
-AmdFlash::AmdFlash(const std::string& name, std::span<const SectorInfo> sectorInfo_,
-                   uint16_t ID_, Addressing addressing_,
+AmdFlash::AmdFlash(const std::string& name, const ValidatedChip& validatedChip,
+                   std::span<const bool> writeProtectSectors,
                    const DeviceConfig& config)
-	: motherBoard(config.getMotherBoard())
-	, sectorInfo(sectorInfo_)
-	, sz(sum(sectorInfo, &SectorInfo::size))
-	, ID(ID_)
-	, addressing(addressing_)
+	: AmdFlash(name, validatedChip, nullptr, writeProtectSectors, config)
 {
-	init(name, config, Load::NORMAL, nullptr);
 }
 
 [[nodiscard]] static bool sramEmpty(const SRAM& ram)
@@ -49,41 +41,36 @@ AmdFlash::AmdFlash(const std::string& name, std::span<const SectorInfo> sectorIn
 	                      [&](auto i) { return ram[i] == 0xFF; });
 }
 
-void AmdFlash::init(const std::string& name, const DeviceConfig& config, Load load, const Rom* rom)
+AmdFlash::AmdFlash(const std::string& name, const ValidatedChip& validatedChip,
+                   const Rom* rom, std::span<const bool> writeProtectSectors,
+                   const DeviceConfig& config)
+	: motherBoard(config.getMotherBoard())
+	, chip(validatedChip.chip)
 {
-	assert(std::has_single_bit(size()));
-
-	auto numSectors = sectorInfo.size();
+	auto numSectors = chip.geometry.sectorCount;
+	assert(writeProtectSectors.size() <= numSectors);
 
 	size_t writableSize = 0;
 	size_t readOnlySize = 0;
 	writeAddress.resize(numSectors);
-	for (auto i : xrange(numSectors)) {
-		if (sectorInfo[i].writeProtected) {
-			writeAddress[i] = -1;
-			readOnlySize += sectorInfo[i].size;
-		} else {
-			writeAddress[i] = narrow<ptrdiff_t>(writableSize);
-			writableSize += sectorInfo[i].size;
+	for (size_t sector = 0; const AmdFlash::Region& region : chip.geometry.regions) {
+		for (size_t regionSector = 0; regionSector < region.count; regionSector++, sector++) {
+			if (sector < writeProtectSectors.size() && writeProtectSectors[sector]) {
+				writeAddress[sector] = -1;
+				readOnlySize += region.size;
+			} else {
+				writeAddress[sector] = narrow<ptrdiff_t>(writableSize);
+				writableSize += region.size;
+			}
 		}
 	}
 	assert((writableSize + readOnlySize) == size());
 
 	bool loaded = false;
 	if (writableSize) {
-		if (load == Load::NORMAL) {
-			ram = std::make_unique<SRAM>(
-				name, "flash rom",
-				writableSize, config, nullptr, &loaded);
-		} else {
-			// Hack for 'Matra INK', flash chip is wired-up so that
-			// writes are never visible to the MSX (but the flash
-			// is not made write-protected). In this case it doesn't
-			// make sense to load/save the SRAM file.
-			ram = std::make_unique<SRAM>(
-				name, "flash rom",
-				writableSize, config, SRAM::DontLoadTag{});
-		}
+		ram = std::make_unique<SRAM>(
+			name, "flash rom",
+			writableSize, config, nullptr, &loaded);
 	}
 	if (readOnlySize) {
 		// If some part of the flash is read-only we require a ROM
@@ -140,38 +127,40 @@ void AmdFlash::init(const std::string& name, const DeviceConfig& config, Load lo
 	readAddress.resize(numSectors);
 	auto romSize = rom ? rom->size() : 0;
 	size_t offset = 0;
-	for (auto i : xrange(numSectors)) {
-		auto sectorSize = sectorInfo[i].size;
-		if (isSectorWritable(i)) {
-			readAddress[i] = &(*ram)[writeAddress[i]];
-			if (!loaded) {
-				auto* ramPtr = const_cast<uint8_t*>(
-					&(*ram)[writeAddress[i]]);
-				if (offset >= romSize) {
-					// completely past end of rom
-					ranges::fill(std::span{ramPtr, sectorSize}, 0xFF);
-				} else if (offset + sectorSize >= romSize) {
-					// partial overlap
-					auto last = romSize - offset;
-					auto missing = sectorSize - last;
-					const uint8_t* romPtr = &(*rom)[offset];
-					ranges::copy(std::span{romPtr, last}, ramPtr);
-					ranges::fill(std::span{&ramPtr[last], missing}, 0xFF);
+	for (size_t sector = 0; const AmdFlash::Region& region : chip.geometry.regions) {
+		for (size_t regionSector = 0; regionSector < region.count; regionSector++, sector++) {
+			auto sectorSize = region.size;
+			if (isSectorWritable(sector)) {
+				readAddress[sector] = &(*ram)[writeAddress[sector]];
+				if (!loaded) {
+					auto* ramPtr = const_cast<uint8_t*>(
+						&(*ram)[writeAddress[sector]]);
+					if (offset >= romSize) {
+						// completely past end of rom
+						ranges::fill(std::span{ramPtr, sectorSize}, 0xFF);
+					} else if (offset + sectorSize >= romSize) {
+						// partial overlap
+						auto last = romSize - offset;
+						auto missing = sectorSize - last;
+						const uint8_t* romPtr = &(*rom)[offset];
+						ranges::copy(std::span{romPtr, last}, ramPtr);
+						ranges::fill(std::span{&ramPtr[last], missing}, 0xFF);
+					} else {
+						// completely before end of rom
+						const uint8_t* romPtr = &(*rom)[offset];
+						ranges::copy(std::span{romPtr, sectorSize}, ramPtr);
+					}
+				}
+			} else {
+				assert(rom); // must have rom constructor parameter
+				if ((offset + sectorSize) <= romSize) {
+					readAddress[sector] = &(*rom)[offset];
 				} else {
-					// completely before end of rom
-					const uint8_t* romPtr = &(*rom)[offset];
-					ranges::copy(std::span{romPtr, sectorSize}, ramPtr);
+					readAddress[sector] = nullptr;
 				}
 			}
-		} else {
-			assert(rom); // must have rom constructor parameter
-			if ((offset + sectorSize) <= romSize) {
-				readAddress[i] = &(*rom)[offset];
-			} else {
-				readAddress[i] = nullptr;
-			}
+			offset += sectorSize;
 		}
-		offset += sectorSize;
 	}
 	assert(offset == size());
 
@@ -183,23 +172,28 @@ AmdFlash::~AmdFlash() = default;
 AmdFlash::GetSectorInfoResult AmdFlash::getSectorInfo(size_t address) const
 {
 	address &= size() - 1;
-	auto it = sectorInfo.begin();
+	auto it = chip.geometry.regions.begin();
 	size_t sector = 0;
-	while (address >= it->size) {
-		address -= it->size;
-		++sector;
+	while (address >= it->count * it->size) {
+		address -= it->count * it->size;
+		sector += it->count;
 		++it;
-		assert(it != sectorInfo.end());
+		assert(it != chip.geometry.regions.end());
 	}
-	auto sectorSize = it->size;
-	auto offset = address;
-	return {sector, sectorSize, offset};
+	return {sector + address / it->size, it->size, address % it->size};
 }
 
 void AmdFlash::reset()
 {
-	cmdIdx = 0;
-	setState(ST_IDLE);
+	status = 0x80;
+	softReset();
+}
+
+void AmdFlash::softReset()
+{
+	cmd.clear();
+	setState(State::IDLE);
+	status &= 0xC4; // clear status
 }
 
 void AmdFlash::setState(State newState)
@@ -211,32 +205,234 @@ void AmdFlash::setState(State newState)
 
 uint8_t AmdFlash::peek(size_t address) const
 {
-	auto [sector, sectorSize, offset] = getSectorInfo(address);
-	if (state == ST_IDLE) {
+	if (state == State::IDLE) {
+		auto [sector, sectorSize, offset] = getSectorInfo(address);
 		if (const uint8_t* addr = readAddress[sector]) {
 			return addr[offset];
 		} else {
 			return 0xFF;
 		}
-	} else {
-		if (addressing == Addressing::BITS_12) {
-			// convert the address to the '11 bit case'
+	} else if (state == State::IDENT) {
+		if (chip.geometry.deviceInterface == DeviceInterface::x8x16) {
+			if (chip.autoSelect.oddZero && (address & 1)) {
+				// some devices return zero for odd bits instead of mirroring
+				return 0x00;
+			}
+			// convert byte address to native address
 			address >>= 1;
 		}
-		switch (address & 3) {
-		case 0:
-			return narrow_cast<uint8_t>(ID >> 8);
-		case 1:
-			return narrow_cast<uint8_t>(ID & 0xFF);
-		case 2:
-			// 1 -> write protected
-			return isSectorWritable(sector) ? 0 : 1;
-		case 3:
-		default:
-			// TODO what is this? According to this it reads as '1'
-			//  http://www.msx.org/forumtopicl8329.html
-			return 1;
+		return narrow_cast<uint8_t>(peekAutoSelect(address, chip.autoSelect.undefined));
+	} else if (state == State::CFI) {
+		if (chip.geometry.deviceInterface == DeviceInterface::x8x16) {
+			// convert byte address to native address
+			const uint16_t result = peekCFI(address >> 1);
+			return narrow_cast<uint8_t>(address & 1 ? result >> 8 : result);
+		} else {
+			return narrow_cast<uint8_t>(peekCFI(address));
 		}
+	} else if (state == one_of(State::STATUS, State::PRGERR)) {
+		return status;
+	} else {
+		UNREACHABLE;
+	}
+}
+
+uint16_t AmdFlash::peekAutoSelect(size_t address, uint16_t undefined) const
+{
+	switch (address & chip.autoSelect.readMask) {
+	case 0x0:
+		return to_underlying(chip.autoSelect.manufacturer);
+	case 0x1:
+		return chip.autoSelect.device.size() == 1 ? chip.autoSelect.device[0] | 0x2200 : 0x227E;
+	case 0x2:
+		if (chip.geometry.deviceInterface == DeviceInterface::x8x16) {
+			// convert native address to byte address
+			address <<= 1;
+		}
+		return isSectorWritable(getSectorInfo(address).sector) ? 0 : 1;
+	case 0x3:
+		// On AM29F040 it indicates "Autoselect Device Unprotect Code".
+		// Datasheet does not elaborate. Value is 0x01 according to
+		//  https://www.msx.org/forum/semi-msx-talk/emulation/matra-ink-emulated
+		//
+		// On M29W640G it indicates "Extended Block Verify Code".
+		// Bit 7: 0: Extended memory block not factory locked
+		//        1: Extended memory block factory locked
+		// Other bits are 0x18 on GL, GT and GB models, and 0x01 on GH model.
+		// Datasheet does not explain their meaning.
+		// Actual value is 0x08 on GB model (verified on hardware).
+		//
+		// On S29GL064S it indicates "Secure Silicon Region Factory Protect":
+		// Bit 4: 0: WP# protects lowest address (bottom boot)
+		//        1: WP# protects highest address (top boot)
+		// Bit 7: 0: Secure silicon region not factory locked
+		//        1: Secure silicon region factory locked
+		// Other bits are 0xFF0A. Datasheet does not explain their meaning.
+		//
+		// On Alliance Memory AS29CF160B it indicates Continuation ID.
+		// Datasheet does not elaborate. Value is 0x7F.
+		return chip.autoSelect.extraCode;
+	case 0xE:
+		return chip.autoSelect.device.size() == 2 ? chip.autoSelect.device[0] | 0x2200 : undefined;
+	case 0xF:
+		return chip.autoSelect.device.size() == 2 ? chip.autoSelect.device[1] | 0x2200 : undefined;
+	default:
+		// some devices return zero instead of 0xFFFF (typical)
+		return undefined;
+	}
+}
+
+uint16_t AmdFlash::peekCFI(size_t address) const
+{
+	const size_t maskedAddress = address & chip.cfi.readMask;
+
+	if (maskedAddress < 0x10) {
+		if (chip.cfi.withManufacturerDevice) {
+			// M29W640GB exposes manufacturer & device ID below 0x10 (as 16-bit values)
+			switch (maskedAddress) {
+			case 0x0:
+				return to_underlying(chip.autoSelect.manufacturer);
+			case 0x1:
+				return chip.autoSelect.device.size() == 1 ? chip.autoSelect.device[0] | 0x2200 : 0x227E;
+			case 0x2:
+				return chip.autoSelect.device.size() == 2 ? chip.autoSelect.device[0] | 0x2200 : 0xFFFF;
+			case 0x3:
+				return chip.autoSelect.device.size() == 2 ? chip.autoSelect.device[1] | 0x2200 : 0xFFFF;
+			default:
+				return 0xFFFF;
+			}
+		} else if (chip.cfi.withAutoSelect) {
+			// S29GL064S exposes auto select data below 0x10 (as 16-bit values)
+			return peekAutoSelect(address);
+		}
+	}
+
+	switch (maskedAddress) {
+	case 0x10:
+		return 'Q';
+	case 0x11:
+		return 'R';
+	case 0x12:
+		return 'Y';
+	case 0x13:
+		return 0x02;  // AMD compatible
+	case 0x14:
+		return 0x00;
+	case 0x15:
+		return 0x40;
+	case 0x16:
+	case 0x17:
+	case 0x18:
+	case 0x19:
+	case 0x1A:
+		return 0x00;
+	case 0x1B:
+		return chip.cfi.systemInterface.supply.minVcc;
+	case 0x1C:
+		return chip.cfi.systemInterface.supply.maxVcc;
+	case 0x1D:
+		return chip.cfi.systemInterface.supply.minVpp;
+	case 0x1E:
+		return chip.cfi.systemInterface.supply.maxVpp;
+	case 0x1F:
+		return chip.cfi.systemInterface.typTimeout.singleProgram.exponent;
+	case 0x20:
+		return chip.cfi.systemInterface.typTimeout.multiProgram.exponent;
+	case 0x21:
+		return chip.cfi.systemInterface.typTimeout.sectorErase.exponent;
+	case 0x22:
+		return chip.cfi.systemInterface.typTimeout.chipErase.exponent;
+	case 0x23:
+		return chip.cfi.systemInterface.maxTimeoutMult.singleProgram.exponent;
+	case 0x24:
+		return chip.cfi.systemInterface.maxTimeoutMult.multiProgram.exponent;
+	case 0x25:
+		return chip.cfi.systemInterface.maxTimeoutMult.sectorErase.exponent;
+	case 0x26:
+		return chip.cfi.systemInterface.maxTimeoutMult.chipErase.exponent;
+	case 0x27:
+		return chip.geometry.size.exponent;
+	case 0x28:
+		return narrow<uint8_t>(to_underlying(chip.geometry.deviceInterface) & 0xFF);
+	case 0x29:
+		return narrow<uint8_t>(to_underlying(chip.geometry.deviceInterface) >> 8);
+	case 0x2A:
+		return chip.program.pageSize.exponent;
+	case 0x2B:
+		return 0x00;
+	case 0x2C:
+		return narrow<uint8_t>(chip.geometry.regions.size());
+	case 0x2D:
+	case 0x31:
+	case 0x35:
+	case 0x39:
+		if (const size_t index = (maskedAddress - 0x2D) >> 2; index < chip.geometry.regions.size()) {
+			return narrow<uint8_t>((chip.geometry.regions[index].count - 1) & 0xFF);
+		}
+		return 0x00;
+	case 0x2E:
+	case 0x32:
+	case 0x36:
+	case 0x3A:
+		if (const size_t index = (maskedAddress - 0x2E) >> 2; index < chip.geometry.regions.size()) {
+			return narrow<uint8_t>((chip.geometry.regions[index].count - 1) >> 8);
+		}
+		return 0x00;
+	case 0x2F:
+	case 0x33:
+	case 0x37:
+	case 0x3B:
+		if (const size_t index = (maskedAddress - 0x2F) >> 2; index < chip.geometry.regions.size()) {
+			return narrow<uint8_t>((chip.geometry.regions[index].size >> 8) & 0xFF);
+		}
+		return 0x00;
+	case 0x30:
+	case 0x34:
+	case 0x38:
+	case 0x3C:
+		if (const size_t index = (maskedAddress - 0x30) >> 2; index < chip.geometry.regions.size()) {
+			return narrow<uint8_t>((chip.geometry.regions[index].size >> 8) >> 8);
+		}
+		return 0x00;
+	case 0x40:
+		return 'P';
+	case 0x41:
+		return 'R';
+	case 0x42:
+		return 'I';
+	case 0x43:
+		return '0' + chip.cfi.primaryAlgorithm.version.major;
+	case 0x44:
+		return '0' + chip.cfi.primaryAlgorithm.version.minor;
+	case 0x45:
+		return narrow<uint8_t>(chip.cfi.primaryAlgorithm.addressSensitiveUnlock | (chip.cfi.primaryAlgorithm.siliconRevision << 2));
+	case 0x46:
+		return chip.cfi.primaryAlgorithm.eraseSuspend;
+	case 0x47:
+		return chip.cfi.primaryAlgorithm.sectorProtect;
+	case 0x48:
+		return chip.cfi.primaryAlgorithm.sectorTemporaryUnprotect;
+	case 0x49:
+		return chip.cfi.primaryAlgorithm.sectorProtectScheme;
+	case 0x4A:
+		return chip.cfi.primaryAlgorithm.simultaneousOperation;
+	case 0x4B:
+		return chip.cfi.primaryAlgorithm.burstMode;
+	case 0x4C:
+		return chip.cfi.primaryAlgorithm.pageMode;
+	case 0x4D:
+		return chip.cfi.primaryAlgorithm.version.minor >= 1 ? chip.cfi.primaryAlgorithm.supply.minAcc : 0xFFFF;
+	case 0x4E:
+		return chip.cfi.primaryAlgorithm.version.minor >= 1 ? chip.cfi.primaryAlgorithm.supply.maxAcc : 0xFFFF;
+	case 0x4F:
+		return chip.cfi.primaryAlgorithm.version.minor >= 1 ? chip.cfi.primaryAlgorithm.bootBlockFlag : 0xFFFF;
+	case 0x50:
+		return chip.cfi.primaryAlgorithm.version.minor >= 2 ? chip.cfi.primaryAlgorithm.programSuspend : 0xFFFF;
+	default:
+		// TODO
+		// 0x61-0x64 Unique 64-bit device number / security code for M29W800DB and M29W640GB.
+		// M29W640GB also has unknown data in 0x65-0x6A, as well as some in the 0x80-0xFF range.
+		return 0xFFFF;
 	}
 }
 
@@ -245,15 +441,20 @@ bool AmdFlash::isSectorWritable(size_t sector) const
 	return vppWpPinLow && (sector == one_of(0u, 1u)) ? false : (writeAddress[sector] != -1) ;
 }
 
-uint8_t AmdFlash::read(size_t address) const
+uint8_t AmdFlash::read(size_t address)
 {
-	// note: after a read we stay in the same mode
-	return peek(address);
+	const uint8_t value = peek(address);
+	if (state == State::STATUS) {
+		setState(State::IDLE);
+	} else if (state == State::PRGERR) {
+		status ^= 0x40;
+	}
+	return value;
 }
 
 const uint8_t* AmdFlash::getReadCacheLine(size_t address) const
 {
-	if (state == ST_IDLE) {
+	if (state == State::IDLE) {
 		auto [sector, sectorSize, offset] = getSectorInfo(address);
 		const uint8_t* addr = readAddress[sector];
 		return addr ? &addr[offset] : MSXDevice::unmappedRead.data();
@@ -264,20 +465,59 @@ const uint8_t* AmdFlash::getReadCacheLine(size_t address) const
 
 void AmdFlash::write(size_t address, uint8_t value)
 {
-	assert(cmdIdx < MAX_CMD_SIZE);
-	cmd[cmdIdx].addr = address;
-	cmd[cmdIdx].value = value;
-	++cmdIdx;
-	if (checkCommandManufacturer() ||
-	    checkCommandEraseSector() ||
-	    checkCommandProgram() ||
-	    checkCommandDoubleByteProgram() ||
-	    checkCommandQuadrupleByteProgram() ||
-	    checkCommandEraseChip() ||
-	    checkCommandReset()) {
-		// do nothing, we're still matching a command, but it is not complete yet
+	cmd.push_back({address, value});
+
+	if (state == State::IDLE) {
+		if (checkCommandAutoSelect() ||
+		    checkCommandEraseSector() ||
+		    checkCommandProgram() ||
+		    checkCommandDoubleByteProgram() ||
+		    checkCommandQuadrupleByteProgram() ||
+		    checkCommandBufferProgram() ||
+		    checkCommandEraseChip() ||
+		    checkCommandCFIQuery() ||
+		    checkCommandContinuityCheck() ||
+		    checkCommandStatusRead() ||
+		    checkCommandStatusClear() ||
+		    checkCommandLongReset() ||
+		    checkCommandReset()) {
+			// do nothing, we're still matching a command, but it is not complete yet
+		} else {
+			cmd.clear();
+		}
+	} else if (state == State::IDENT) {
+		if (checkCommandCFIQuery() ||
+		    checkCommandLongReset() ||
+		    checkCommandReset()) {
+			// do nothing, we're still matching a command, but it is not complete yet
+		} else {
+			cmd.clear();
+		}
+	} else if (state == State::CFI) {
+		if (checkCommandLongReset() ||
+		    checkCommandCFIExit() ||
+		    checkCommandReset()) {
+			// do nothing, we're still matching a command, but it is not complete yet
+		} else {
+			cmd.clear();
+		}
+	} else if (state == State::STATUS) {
+		// TODO confirm. S29GL064S datasheet: "it is not recommended".
+		if (checkCommandLongReset() ||
+		    checkCommandReset()) {
+			// do nothing, we're still matching a command, but it is not complete yet
+		} else {
+			cmd.clear();
+		}
+	} else if (state == State::PRGERR) {
+		if (checkCommandLongReset() ||
+		    (chip.program.shortAbortReset && checkCommandReset())) {
+			// do nothing, we're still matching a command, but it is not complete yet
+		} else {
+			cmd.clear();
+		}
 	} else {
-		reset();
+		UNREACHABLE;
 	}
 }
 
@@ -289,7 +529,64 @@ void AmdFlash::write(size_t address, uint8_t value)
 bool AmdFlash::checkCommandReset()
 {
 	if (cmd[0].value == 0xf0) {
-		reset();
+		softReset();
+	}
+	return false;
+}
+
+bool AmdFlash::checkCommandLongReset()
+{
+	static constexpr std::array<uint8_t, 3> cmdSeq = {0xaa, 0x55, 0xf0};
+	if (partialMatch(cmdSeq)) {
+		if (cmd.size() < 3) return true;
+		softReset();
+	}
+	return false;
+}
+
+bool AmdFlash::checkCommandStatusRead()
+{
+	static constexpr std::array<uint8_t, 1> cmdSeq = {0x70};
+	if (chip.misc.statusCommand && partialMatch(cmdSeq)) {
+		setState(State::STATUS);
+	}
+	return false;
+}
+
+bool AmdFlash::checkCommandStatusClear()
+{
+	static constexpr std::array<uint8_t, 1> cmdSeq = {0x71};
+	if (chip.misc.statusCommand && partialMatch(cmdSeq)) {
+		softReset();
+	}
+	return false;
+}
+
+bool AmdFlash::checkCommandContinuityCheck()
+{
+	if (chip.misc.continuityCommand && cmd[0] == AddressValue{0x5554AB, 0xFF}) {
+		if (cmd.size() < 2) return true;
+		if (cmd.size() == 2 && cmd[1] == AddressValue{0x2AAB54, 0x00}) {
+			status |= 0x01;
+		}
+	}
+	return false;
+}
+
+bool AmdFlash::checkCommandCFIQuery()
+{
+	// convert byte address to native address
+	const size_t addr = (chip.geometry.deviceInterface == DeviceInterface::x8x16) ? cmd[0].addr >> 1 : cmd[0].addr;
+	if (chip.cfi.command && (addr & chip.cfi.commandMask) == 0x55 && cmd[0].value == 0x98) {
+		setState(State::CFI);
+	}
+	return false;
+}
+
+bool AmdFlash::checkCommandCFIExit()
+{
+	if (chip.cfi.exitCommand && cmd[0].value == 0xff) {
+		softReset();
 	}
 	return false;
 }
@@ -298,14 +595,15 @@ bool AmdFlash::checkCommandEraseSector()
 {
 	static constexpr std::array<uint8_t, 5> cmdSeq = {0xaa, 0x55, 0x80, 0xaa, 0x55};
 	if (partialMatch(cmdSeq)) {
-		if (cmdIdx < 6) return true;
+		if (cmd.size() < 6) return true;
 		if (cmd[5].value == 0x30) {
 			auto addr = cmd[5].addr;
 			auto [sector, sectorSize, offset] = getSectorInfo(addr);
 			if (isSectorWritable(sector)) {
-				ram->memset(writeAddress[sector],
-				            0xff, sectorSize);
+				ram->memset(writeAddress[sector], 0xff, sectorSize);
 			}
+
+			status |= 0x80; // immediate completion
 		}
 	}
 	return false;
@@ -315,9 +613,11 @@ bool AmdFlash::checkCommandEraseChip()
 {
 	static constexpr std::array<uint8_t, 5> cmdSeq = {0xaa, 0x55, 0x80, 0xaa, 0x55};
 	if (partialMatch(cmdSeq)) {
-		if (cmdIdx < 6) return true;
+		if (cmd.size() < 6) return true;
 		if (cmd[5].value == 0x10) {
 			if (ram) ram->memset(0, 0xff, ram->size());
+
+			status |= 0x80; // immediate completion
 		}
 	}
 	return false;
@@ -325,14 +625,17 @@ bool AmdFlash::checkCommandEraseChip()
 
 bool AmdFlash::checkCommandProgramHelper(size_t numBytes, std::span<const uint8_t> cmdSeq)
 {
-	if (partialMatch(cmdSeq)) {
-		if (cmdIdx < (cmdSeq.size() + numBytes)) return true;
+	if (numBytes <= chip.program.pageSize && partialMatch(cmdSeq)) {
+		if (cmd.size() < (cmdSeq.size() + numBytes)) return true;
 		for (auto i : xrange(cmdSeq.size(), cmdSeq.size() + numBytes)) {
 			auto addr = cmd[i].addr;
 			auto [sector, sectorSize, offset] = getSectorInfo(addr);
 			if (isSectorWritable(sector)) {
 				auto ramAddr = writeAddress[sector] + offset;
-				ram->write(ramAddr, (*ram)[ramAddr] & cmd[i].value);
+				uint8_t ramValue = (*ram)[ramAddr] & cmd[i].value;
+				ram->write(ramAddr, ramValue);
+
+				status = (status & 0x7F) | (ramValue & 0x80); // immediate completion
 			}
 		}
 	}
@@ -348,23 +651,61 @@ bool AmdFlash::checkCommandProgram()
 bool AmdFlash::checkCommandDoubleByteProgram()
 {
 	static constexpr std::array<uint8_t, 1> cmdSeq = {0x50};
-	return checkCommandProgramHelper(2, cmdSeq);
+	return chip.program.fastCommand && checkCommandProgramHelper(2, cmdSeq);
 }
 
 bool AmdFlash::checkCommandQuadrupleByteProgram()
 {
 	static constexpr std::array<uint8_t, 1> cmdSeq = {0x56};
-	return checkCommandProgramHelper(4, cmdSeq);
+	return chip.program.fastCommand && checkCommandProgramHelper(4, cmdSeq);
 }
 
-bool AmdFlash::checkCommandManufacturer()
+bool AmdFlash::checkCommandBufferProgram()
+{
+	static constexpr std::array<uint8_t, 2> cmdSeq = {0xaa, 0x55};
+	if (chip.program.bufferCommand && partialMatch(cmdSeq)) {
+		if (cmd.size() <= 2) return true;
+		if (cmd.size() >= 3 && cmd[2].value == 0x25) {
+			if (cmd.size() <= 3) return true;
+			size_t sector = getSectorInfo(cmd[2].addr).sector;
+			if (cmd.size() >= 4 && cmd[3].value < chip.program.pageSize && getSectorInfo(cmd[3].addr).sector == sector) {
+				if (cmd.size() <= 4) return true;
+				const size_t pageMask = ~(chip.program.pageSize - 1);
+				const unsigned confirmIndex = 4 + cmd[3].value + 1;
+				if (cmd.size() >= 5 && ((cmd.back().addr & pageMask) == (cmd[4].addr & pageMask) || cmd.size() > confirmIndex)) {
+					if (cmd.size() >= 5 && cmd.size() <= confirmIndex) {
+						status = (status & 0x7F) | (~cmd.back().value & 0x80);
+					}
+					if (cmd.size() <= confirmIndex) return true;
+					if (cmd.size() == confirmIndex + 1 && cmd[confirmIndex].value == 0x29 && getSectorInfo(cmd[confirmIndex].addr).sector == sector) {
+						if (isSectorWritable(sector)) {
+							// TODO de-duplicate same-address writes to the last one
+							for (auto i : xrange(size_t(4), confirmIndex)) {
+								auto ramAddr = writeAddress[sector] + getSectorInfo(cmd[i].addr).offset;
+								uint8_t ramValue = (*ram)[ramAddr] & cmd[i].value;
+								ram->write(ramAddr, ramValue);
+
+								status = (status & 0x7F) | (ramValue & 0x80); // immediate completion
+							}
+						}
+						return false;
+					}
+				}
+			}
+
+			status = (status & 0xDF) | 0x02;
+			setState(State::PRGERR);
+		}
+	}
+	return false;
+}
+
+bool AmdFlash::checkCommandAutoSelect()
 {
 	static constexpr std::array<uint8_t, 3> cmdSeq = {0xaa, 0x55, 0x90};
 	if (partialMatch(cmdSeq)) {
-		if (cmdIdx == 3) {
-			setState(ST_IDENT);
-		}
-		if (cmdIdx < 4) return true;
+		if (cmd.size() < 3) return true;
+		setState(State::IDENT);
 	}
 	return false;
 }
@@ -373,40 +714,52 @@ bool AmdFlash::partialMatch(std::span<const uint8_t> dataSeq) const
 {
 	static constexpr std::array<unsigned, 5> addrSeq = {0, 1, 0, 0, 1};
 	static constexpr std::array<unsigned, 2> cmdAddr = {0x555, 0x2aa};
+	(void)addrSeq; (void)cmdAddr; // suppress (invalid) gcc warning
 
 	assert(dataSeq.size() <= 5);
-	for (auto i : xrange(std::min(unsigned(dataSeq.size()), cmdIdx))) {
-		// convert the address to the '11 bit case'
-		auto addr = (addressing == Addressing::BITS_12) ? cmd[i].addr >> 1 : cmd[i].addr;
-		if (((addr & 0x7FF) != cmdAddr[addrSeq[i]]) ||
-		    (cmd[i].value != dataSeq[i])) {
-			return false;
-		}
-	}
-	return true;
+	return ranges::all_of(xrange(std::min(dataSeq.size(), cmd.size())), [&](auto i) {
+		// convert byte address to native address
+		auto addr = (chip.geometry.deviceInterface == DeviceInterface::x8x16) ? cmd[i].addr >> 1 : cmd[i].addr;
+		return ((addr & 0x7FF) == cmdAddr[addrSeq[i]]) &&
+		       (cmd[i].value == dataSeq[i]);
+	});
 }
 
 
 static constexpr std::initializer_list<enum_string<AmdFlash::State>> stateInfo = {
-	{ "IDLE",  AmdFlash::ST_IDLE  },
-	{ "IDENT", AmdFlash::ST_IDENT }
+	{ "IDLE",   AmdFlash::State::IDLE  },
+	{ "IDENT",  AmdFlash::State::IDENT },
+	{ "CFI",    AmdFlash::State::CFI },
+	{ "STATUS", AmdFlash::State::STATUS },
+	{ "PRGERR", AmdFlash::State::PRGERR }
 };
 SERIALIZE_ENUM(AmdFlash::State, stateInfo);
 
 template<typename Archive>
-void AmdFlash::AmdCmd::serialize(Archive& ar, unsigned /*version*/)
+void AmdFlash::AddressValue::serialize(Archive& ar, unsigned /*version*/)
 {
 	ar.serialize("address", addr,
 	             "value",   value);
 }
 
+// version 1: Initial version.
+// version 2: Added vppWpPinLow.
+// version 3: Changed cmd to static_vector, added status.
 template<typename Archive>
 void AmdFlash::serialize(Archive& ar, unsigned version)
 {
-	ar.serialize("ram",    *ram,
-	             "cmd",    cmd,
-	             "cmdIdx", cmdIdx,
-	             "state",  state);
+	ar.serialize("ram", *ram);
+	if (ar.versionAtLeast(version, 3)) {
+		ar.serialize("cmd",    cmd,
+		             "status", status);
+	} else {
+		std::array<AddressValue, 8> cmdArray;
+		unsigned cmdSize = 0;
+		ar.serialize("cmd",    cmdArray,
+		             "cmdIdx", cmdSize);
+		cmd = {from_range, subspan(cmdArray, 0, cmdSize)};
+	}
+	ar.serialize("state", state);
 	if (ar.versionAtLeast(version, 2)) {
 		ar.serialize("vppWpPinLow", vppWpPinLow);
 	}

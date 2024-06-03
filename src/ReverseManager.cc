@@ -55,13 +55,13 @@ static constexpr auto MAX_DIST_1_BEFORE_LAST_SNAPSHOT = EmuDuration(30.0);
 struct Replay
 {
 	explicit Replay(Reactor& reactor_)
-		: reactor(reactor_), currentTime(EmuTime::dummy()) {}
+		: reactor(reactor_) {}
 
 	Reactor& reactor;
 
 	ReverseManager::Events* events;
 	std::vector<Reactor::Board> motherBoards;
-	EmuTime currentTime;
+	EmuTime currentTime = EmuTime::dummy();
 	// this is the amount of times the reverse goto command was used, which
 	// is interesting for the TAS community (see tasvideos.org). It's an
 	// indication of the effort it took to create the replay. Note that
@@ -731,7 +731,7 @@ void ReverseManager::loadReplay(
 
 	// Restore snapshots
 	unsigned replayIdx = 0;
-	for (auto& m : replay.motherBoards) {
+	for (const auto& m : replay.motherBoards) {
 		ReverseChunk newChunk;
 		newChunk.time = m->getCurrentTime();
 
@@ -836,7 +836,7 @@ void ReverseManager::execInputEvent()
 	}
 }
 
-int ReverseManager::signalEvent(const Event& event)
+bool ReverseManager::signalEvent(const Event& event)
 {
 	(void)event;
 	assert(getType(event) == EventType::TAKE_REVERSE_SNAPSHOT);
@@ -849,7 +849,7 @@ int ReverseManager::signalEvent(const Event& event)
 		// schedule creation of next snapshot
 		schedule(getCurrentTime());
 	}
-	return 0;
+	return false;
 }
 
 unsigned ReverseManager::ReverseHistory::getNextSeqNum(EmuTime::param time) const

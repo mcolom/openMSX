@@ -43,7 +43,7 @@ VDPVRAM::LogicalVRAMDebuggable::LogicalVRAMDebuggable(const VDP& vdp_)
 
 unsigned VDPVRAM::LogicalVRAMDebuggable::transform(unsigned address)
 {
-	auto& vram = OUTER(VDPVRAM, logicalVRAMDebug);
+	const auto& vram = OUTER(VDPVRAM, logicalVRAMDebug);
 	return vram.vdp.getDisplayMode().isPlanar()
 	     ? ((address << 16) | (address >> 1)) & 0x1FFFF
 	     : address;
@@ -105,9 +105,6 @@ VDPVRAM::VDPVRAM(VDP& vdp_, unsigned size, EmuTime::param time)
 	, data(*vdp_.getDeviceConfig2().getXML(), bufferSize(size))
 	, logicalVRAMDebug (vdp)
 	, physicalVRAMDebug(vdp, size)
-	#ifdef DEBUG
-	, vramTime(EmuTime::zero())
-	#endif
 	, actualSize(size)
 	, vrMode(vdp.getVRMode())
 	, cmdReadWindow(data)

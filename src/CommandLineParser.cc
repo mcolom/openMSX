@@ -214,12 +214,12 @@ void CommandLineParser::parse(std::span<char*> argv)
 						"Failed to initialize default machine: ",
 						e.getMessage());
 					// Default machine is broken; fall back to C-BIOS config.
-					const auto& fallbackMachine =
-						reactor.getMachineSetting().getDefaultValue().getString();
+					auto fallbackMachine = std::string(
+						reactor.getMachineSetting().getDefaultValue().getString());
 					reactor.getCliComm().printInfo(
 						"Using fallback machine: ", fallbackMachine);
 					try {
-						reactor.switchMachine(string(fallbackMachine));
+						reactor.switchMachine(fallbackMachine);
 					} catch (MSXException& e2) {
 						// Fallback machine failed as well; we're out of options.
 						throw FatalError(std::move(e2).getMessage());
@@ -430,7 +430,7 @@ static void printItemMap(const GroupedItems& itemMap)
 		              formatHelpText(p.first, 50, 20));
 	}));
 	ranges::sort(printSet);
-	for (auto& s : printSet) {
+	for (const auto& s : printSet) {
 		cout << s << '\n';
 	}
 }
@@ -570,11 +570,11 @@ void CommandLineParser::BashOption::parseOption(
 	cmdLine = cmdLine.subspan(0, 0); // eat all remaining parameters
 
 	if (last == "-machine") {
-		for (auto& s : Reactor::getHwConfigs("machines")) {
+		for (const auto& s : Reactor::getHwConfigs("machines")) {
 			cout << s << '\n';
 		}
 	} else if (last.starts_with("-ext")) {
-		for (auto& s : Reactor::getHwConfigs("extensions")) {
+		for (const auto& s : Reactor::getHwConfigs("extensions")) {
 			cout << s << '\n';
 		}
 	} else if (last == "-romtype") {

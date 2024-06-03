@@ -138,12 +138,19 @@ void ImGuiBreakPoints::loadEnd()
 
 void ImGuiBreakPoints::paint(MSXMotherBoard* motherBoard)
 {
-	if (!show || !motherBoard) return;
+	if (!motherBoard) return;
+
+	// Sync even if not visible (e.g. for disassembly view, but also for imgui.ini)
+	auto& cpuInterface = motherBoard->getCPUInterface();
+	syncFromOpenMsx<BreakPoint>    (guiBps,        cpuInterface);
+	syncFromOpenMsx<WatchPoint>    (guiWps,        cpuInterface);
+	syncFromOpenMsx<DebugCondition>(guiConditions, cpuInterface);
+
+	if (!show) return;
 
 	ImGui::SetNextWindowSize(gl::vec2{25, 14} * ImGui::GetFontSize(), ImGuiCond_FirstUseEver);
 	im::Window("Breakpoints", &show, [&]{
 		im::TabBar("tabs", [&]{
-			auto& cpuInterface = motherBoard->getCPUInterface();
 			auto& debugger = motherBoard->getDebugger();
 			im::TabItem("Breakpoints", [&]{
 				paintTab<BreakPoint>(cpuInterface, debugger);
@@ -281,7 +288,7 @@ static void remove(DebugCondition*, MSXCPUInterface& cpuInterface, unsigned id)
 void ImGuiBreakPoints::clear(BreakPoint* tag, MSXCPUInterface& cpuInterface)
 {
 	while (!guiBps.empty()) {
-		if (auto& bp = guiBps.back(); bp.id > 0) {
+		if (const auto& bp = guiBps.back(); bp.id > 0) {
 			remove(tag, cpuInterface, bp.id);
 		}
 		guiBps.pop_back();
@@ -316,6 +323,7 @@ template<typename Item>
 void ImGuiBreakPoints::paintTab(MSXCPUInterface& cpuInterface, Debugger& debugger, std::optional<uint16_t> addr)
 {
 	constexpr bool isWatchPoint = std::is_same_v<Item, WatchPoint>;
+	constexpr bool isCondition  = std::is_same_v<Item, DebugCondition>;
 	bool hasAddress = HasAddress<Item>{} && !addr; // don't draw address-column if filtering a specific address
 	Item* tag = nullptr;
 	auto& items = getItems(tag);
@@ -339,8 +347,6 @@ void ImGuiBreakPoints::paintTab(MSXCPUInterface& cpuInterface, Debugger& debugge
 	int count = 0;
 	int lastDrawnRow = -1; // should only be used when count=1
 	im::Table("items", 5, flags, {-width, 0}, [&]{
-		syncFromOpenMsx<Item>(items, cpuInterface);
-
 		ImGui::TableSetupScrollFreeze(0, 1); // Make top row always visible
 		ImGui::TableSetupColumn("Enable", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort);
 		int typeFlags = isWatchPoint ? ImGuiTableColumnFlags_NoHide : ImGuiTableColumnFlags_Disabled;
@@ -348,7 +354,7 @@ void ImGuiBreakPoints::paintTab(MSXCPUInterface& cpuInterface, Debugger& debugge
 		int addressFlags = hasAddress ? ImGuiTableColumnFlags_NoHide | ImGuiTableColumnFlags_DefaultSort
 		                              : ImGuiTableColumnFlags_Disabled;
 		ImGui::TableSetupColumn("Address", addressFlags);
-		ImGui::TableSetupColumn("Condition");
+		ImGui::TableSetupColumn("Condition", isCondition ? ImGuiTableColumnFlags_NoHide : 0);
 		ImGui::TableSetupColumn("Action", addr ? 0 : ImGuiTableColumnFlags_DefaultHide);
 		ImGui::TableHeadersRow();
 
@@ -370,7 +376,7 @@ void ImGuiBreakPoints::paintTab(MSXCPUInterface& cpuInterface, Debugger& debugge
 			GuiItem item{
 				idCounter,
 				true, // enabled, but still invalid
-				WatchPoint::WRITE_MEM,
+				to_underlying(WatchPoint::Type::WRITE_MEM),
 				{}, {}, {}, {}, // address
 				{}, // cond
 				makeTclList("debug", "break")};
@@ -436,12 +442,6 @@ static const std::vector<DebugCondition>& getOpenMSXItems(DebugCondition*, const
 [[nodiscard]] static TclObject getCommandObj(const std::shared_ptr<WatchPoint>& wp) { return wp->getCommandObj(); }
 
 
-[[nodiscard]] std::vector<ImGuiBreakPoints::GuiItem>& ImGuiBreakPoints::getBps(MSXCPUInterface& cpuInterface)
-{
-	syncFromOpenMsx<BreakPoint>(guiBps, cpuInterface);
-	return guiBps;
-}
-
 template<typename Item>
 void ImGuiBreakPoints::syncFromOpenMsx(std::vector<GuiItem>& items, MSXCPUInterface& cpuInterface)
 {
@@ -471,7 +471,7 @@ void ImGuiBreakPoints::syncFromOpenMsx(std::vector<GuiItem>& items, MSXCPUInterf
 			it != items.end()) {
 			// item exists on the openMSX side, make sure it's in sync
 			if constexpr (isWatchPoint) {
-				it->wpType = item->getType();
+				it->wpType = to_underlying(item->getType());
 			}
 			if constexpr (hasAddress) {
 				assert(it->addr);
@@ -494,7 +494,7 @@ void ImGuiBreakPoints::syncFromOpenMsx(std::vector<GuiItem>& items, MSXCPUInterf
 			it->cmd  = getCommandObj(item);
 		} else {
 			// item was added on the openMSX side, copy to the GUI side
-			WatchPoint::Type wpType = WatchPoint::WRITE_MEM;
+			WatchPoint::Type wpType = WatchPoint::Type::WRITE_MEM;
 			std::optional<uint16_t> addr;
 			std::optional<uint16_t> endAddr;
 			TclObject addrStr;
@@ -512,7 +512,7 @@ void ImGuiBreakPoints::syncFromOpenMsx(std::vector<GuiItem>& items, MSXCPUInterf
 			items.push_back(GuiItem{
 				narrow<int>(getId(item)),
 				true,
-				wpType,
+				to_underlying(wpType),
 				addr, endAddr, std::move(addrStr), std::move(endAddrStr),
 				getConditionObj(item), getCommandObj(item)});
 			selectedRow = -1;
@@ -567,7 +567,7 @@ static bool isValidAddr(const ImGuiBreakPoints::GuiItem& i)
 	if (!i.addr) return false;
 	if (isWatchPoint) {
 		if (i.endAddr && (*i.endAddr < *i.addr)) return false;
-		if ((i.wpType == one_of(WatchPoint::READ_IO, WatchPoint::WRITE_IO)) &&
+		if ((WatchPoint::Type(i.wpType) == one_of(WatchPoint::Type::READ_IO, WatchPoint::Type::WRITE_IO)) &&
 			((*i.addr >= 0x100) || (i.endAddr && (*i.endAddr >= 0x100)))) {
 			return false;
 		}

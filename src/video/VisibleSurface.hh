@@ -77,12 +77,10 @@ public:
 	void update(const Setting& setting) noexcept override;
 
 	// EventListener
-	int signalEvent(const Event& event) override;
+	bool signalEvent(const Event& event) override;
 
 	// RTSchedulable
 	void executeRT() override;
-
-	bool guiActive = false;
 
 private:
 	[[nodiscard]] gl::ivec2 getWindowSize() const;
@@ -106,6 +104,7 @@ private:
 	SDL_GLContext glContext;
 
 	bool grab = false;
+	bool guiActive = false;
 
 	static int windowPosX;
 	static int windowPosY;

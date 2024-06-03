@@ -242,7 +242,7 @@ void DebuggableEditor::drawContents(const Sizes& s, Debuggable& debuggable, unsi
 	std::optional<unsigned> nextAddr;
 	// Move cursor but only apply on next frame so scrolling with be synchronized (because currently we can't change the scrolling while the window is being rendered)
 	if (addrMode == CURSOR) {
-		auto& shortcuts = manager.getShortcuts();
+		const auto& shortcuts = manager.getShortcuts();
 		if ((int(currentAddr) >= columns) &&
 		    shortcuts.checkShortcut({.keyChord = ImGuiKey_UpArrow, .repeat = true})) {
 			nextAddr = currentAddr - columns;
@@ -277,7 +277,7 @@ void DebuggableEditor::drawContents(const Sizes& s, Debuggable& debuggable, unsi
 			setStrings(s, debuggable);
 		}
 		struct UserData {
-			// FIXME: We should have a way to retrieve the text edit cursor position more easily in the API, this is rather tedious. This is such a ugly mess we may be better off not using InputText() at all here.
+			// TODO: We should have a way to retrieve the text edit cursor position more easily in the API, this is rather tedious. This is such a ugly mess we may be better off not using InputText() at all here.
 			static int Callback(ImGuiInputTextCallbackData* data) {
 				auto* userData = static_cast<UserData*>(data->UserData);
 				if (!data->HasSelection()) {

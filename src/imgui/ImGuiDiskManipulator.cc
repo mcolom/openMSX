@@ -35,13 +35,13 @@ using namespace std::literals;
 
 DiskContainer* ImGuiDiskManipulator::getDrive()
 {
-	auto& diskManipulator = manager.getReactor().getDiskManipulator();
+	const auto& diskManipulator = manager.getReactor().getDiskManipulator();
 	return diskManipulator.getDrive(selectedDrive);
 }
 
 std::optional<DiskManipulator::DriveAndPartition> ImGuiDiskManipulator::getDriveAndDisk()
 {
-	auto& diskManipulator = manager.getReactor().getDiskManipulator();
+	const auto& diskManipulator = manager.getReactor().getDiskManipulator();
 	return diskManipulator.getDriveAndDisk(selectedDrive);
 }
 
@@ -89,13 +89,13 @@ std::vector<ImGuiDiskManipulator::FileInfo> ImGuiDiskManipulator::dirMSX(DrivePa
 	for (unsigned i = 0; i < num; ++i) {
 		auto entry = dir.getListIndexUnchecked(i);
 		FileInfo info;
-		info.attrib = narrow<uint8_t>(entry.getListIndexUnchecked(1).getOptionalInt().value_or(0));
+		info.attrib = MSXDirEntry::AttribValue(uint8_t(entry.getListIndexUnchecked(1).getOptionalInt().value_or(0)));
 		if (info.attrib & MSXDirEntry::Attrib::VOLUME) continue; // skip
 		info.filename = std::string(entry.getListIndexUnchecked(0).getString());
 		if (info.filename == one_of(".", "..")) continue; // skip
 		info.modified = entry.getListIndexUnchecked(2).getOptionalInt().value_or(0);
 		info.size = entry.getListIndexUnchecked(3).getOptionalInt().value_or(0);
-		info.isDirectory = info.attrib & MSXDirEntry::Attrib::DIRECTORY;
+		info.isDirectory = bool(info.attrib & MSXDirEntry::Attrib::DIRECTORY);
 		if (info.isDirectory) info.size = size_t(-1);
 		result.push_back(std::move(info));
 	}
@@ -291,10 +291,10 @@ std::string ImGuiDiskManipulator::getDiskImageName()
 {
 	auto dd = getDriveAndDisk();
 	if (!dd) return "";
-	auto& [drive, disk] = *dd;
-	if (auto* dr = dynamic_cast<DiskChanger*>(drive)) {
+	const auto& [drive, disk] = *dd;
+	if (const auto* dr = dynamic_cast<const DiskChanger*>(drive)) {
 		return dr->getDiskName().getResolved();
-	} else if (auto* hd = dynamic_cast<HD*>(drive)) {
+	} else if (const auto* hd = dynamic_cast<const HD*>(drive)) {
 		return hd->getImageName().getResolved();
 	} else {
 		return "";
@@ -347,7 +347,7 @@ void ImGuiDiskManipulator::paint(MSXMotherBoard* /*motherBoard*/)
 			ImGui::SetNextItemWidth(-b2Width);
 			bool driveOk = false;
 			im::Combo("##drive", driveDisplayName(selectedDrive).c_str(), [&]{
-				auto& diskManipulator = manager.getReactor().getDiskManipulator();
+				const auto& diskManipulator = manager.getReactor().getDiskManipulator();
 				for (auto drives = diskManipulator.getDriveNamesForCurrentMachine();
 				     const auto& drive : drives) {
 					if (selectedDrive == drive) driveOk = true;
@@ -742,7 +742,7 @@ void ImGuiDiskManipulator::paint(MSXMotherBoard* /*motherBoard*/)
 			ImGui::Separator();
 			im::Disabled(editModal.empty(), [&]{
 				if (ImGui::Button("Ok")) {
-					auto& diskManipulator = manager.getReactor().getDiskManipulator();
+					const auto& diskManipulator = manager.getReactor().getDiskManipulator();
 					auto sizes = [&]{
 						if (newDiskType == UNPARTITIONED) {
 							return std::vector<unsigned>(1, unpartitionedSize.asSectorCount());
@@ -796,12 +796,12 @@ void ImGuiDiskManipulator::exportDiskImage()
 		[&](const auto& fn) {
 			auto dd = getDriveAndDisk();
 			if (!dd) return;
-			auto& [drive, disk] = *dd;
+			const auto& [drive, disk] = *dd;
 			assert(disk);
 
 			try {
 				SectorBuffer buf;
-				File file(fn, File::CREATE);
+				File file(fn, File::OpenMode::CREATE);
 				for (auto i : xrange(disk->getNbSectors())) {
 					disk->readSector(i, buf);
 					file.write(buf.raw);

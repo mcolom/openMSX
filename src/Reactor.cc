@@ -49,7 +49,6 @@
 #include "ranges.hh"
 #include "serialize.hh"
 #include "stl.hh"
-#include "StringOp.hh"
 #include "unreachable.hh"
 #include "build-info.hh"
 
@@ -222,6 +221,7 @@ Reactor::Reactor() = default;
 
 void Reactor::init()
 {
+	shortcuts = make_unique<Shortcuts>();
 	rtScheduler = make_unique<RTScheduler>();
 	eventDistributor = make_unique<EventDistributor>(*this);
 	globalCliComm = make_unique<GlobalCliComm>();
@@ -233,9 +233,8 @@ void Reactor::init()
 		*globalCommandController, *eventDistributor, *globalSettings);
 	symbolManager = make_unique<SymbolManager>(
 		*globalCommandController);
-	imGuiManager = make_unique<ImGuiManager>(*this, globalCommandController->getSettingsConfig());
-	diskFactory = make_unique<DiskFactory>(
-		*this);
+	imGuiManager = make_unique<ImGuiManager>(*this);
+	diskFactory = make_unique<DiskFactory>(*this);
 	diskManipulator = make_unique<DiskManipulator>(
 		*globalCommandController, *this);
 	virtualDrive = make_unique<DiskChanger>(
@@ -379,7 +378,7 @@ const MsxChar2Unicode& Reactor::getMsxChar2Unicode() const
 	// right location to store it.
 	try {
 		if (MSXMotherBoard* board = getMotherBoard()) {
-			if (auto* ppi = dynamic_cast<MSXPPI*>(board->findDevice("ppi"))) {
+			if (const auto* ppi = dynamic_cast<const MSXPPI*>(board->findDevice("ppi"))) {
 				return ppi->getKeyboard().getMsxChar2Unicode();
 			}
 		}
@@ -494,7 +493,7 @@ void Reactor::switchBoard(Board newBoard)
 		activeBoard = newBoard;
 	}
 	eventDistributor->distributeEvent(MachineLoadedEvent());
-	globalCliComm->update(CliComm::HARDWARE, getMachineID(), "select");
+	globalCliComm->update(CliComm::UpdateType::HARDWARE, getMachineID(), "select");
 	if (activeBoard) {
 		activeBoard->activate(true);
 	}
@@ -618,7 +617,7 @@ void Reactor::unpause()
 {
 	if (paused) {
 		paused = false;
-		globalCliComm->update(CliComm::STATUS, "paused", "false");
+		globalCliComm->update(CliComm::UpdateType::STATUS, "paused", "false");
 		unblock();
 	}
 }
@@ -627,7 +626,7 @@ void Reactor::pause()
 {
 	if (!paused) {
 		paused = true;
-		globalCliComm->update(CliComm::STATUS, "paused", "true");
+		globalCliComm->update(CliComm::UpdateType::STATUS, "paused", "true");
 		block();
 	}
 }
@@ -650,7 +649,7 @@ void Reactor::unblock()
 // Observer<Setting>
 void Reactor::update(const Setting& setting) noexcept
 {
-	auto& pauseSetting = getGlobalSettings().getPauseSetting();
+	const auto& pauseSetting = getGlobalSettings().getPauseSetting();
 	if (&setting == &pauseSetting) {
 		if (pauseSetting.getBoolean()) {
 			pause();
@@ -661,7 +660,7 @@ void Reactor::update(const Setting& setting) noexcept
 }
 
 // EventListener
-int Reactor::signalEvent(const Event& event)
+bool Reactor::signalEvent(const Event& event)
 {
 	std::visit(overloaded{
 		[&](const QuitEvent& /*e*/) {
@@ -693,7 +692,7 @@ int Reactor::signalEvent(const Event& event)
 			UNREACHABLE; // we didn't subscribe to this event...
 		}
 	}, event);
-	return 0;
+	return false;
 }
 
 
@@ -930,7 +929,7 @@ void StoreMachineCommand::execute(std::span<const TclObject> tokens, TclObject& 
 	const auto& machineID = tokens[1].getString();
 	const auto& filename = tokens[2].getString();
 
-	auto& board = *reactor.getMachine(machineID);
+	const auto& board = *reactor.getMachine(machineID);
 
 	XmlOutputArchive out(filename);
 	out.serialize("machine", board);
@@ -1134,7 +1133,7 @@ void SoftwareInfoTopic::execute(
 	}
 
 	Sha1Sum sha1sum(tokens[2].getString());
-	auto& romDatabase = reactor.getSoftwareDatabase();
+	const auto& romDatabase = reactor.getSoftwareDatabase();
 	const RomInfo* romInfo = romDatabase.fetchRomInfo(sha1sum);
 	if (!romInfo) {
 		// no match found

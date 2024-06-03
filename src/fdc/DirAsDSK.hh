@@ -18,8 +18,8 @@ class CliComm;
 class DirAsDSK final : public SectorBasedDisk
 {
 public:
-	enum SyncMode { SYNC_READONLY, SYNC_FULL };
-	enum BootSectorType { BOOT_SECTOR_DOS1, BOOT_SECTOR_DOS2 };
+	enum class SyncMode { READONLY, FULL };
+	enum class BootSectorType { DOS1, DOS2 };
 
 public:
 	DirAsDSK(DiskChanger& diskChanger, CliComm& cliComm,
@@ -102,13 +102,17 @@ private:
 	void writeFAT12(unsigned cluster, unsigned val);
 	void exportFileFromFATChange(unsigned cluster, std::span<SectorBuffer> oldFAT);
 	std::pair<unsigned, unsigned> getChainStart(unsigned cluster);
-	[[nodiscard]] bool isDirSector(unsigned sector, DirIndex& dirDirIndex);
-	bool getDirEntryForCluster(unsigned cluster,
-	                           DirIndex& dirIndex, DirIndex& dirDirIndex);
-	[[nodiscard]] DirIndex getDirEntryForCluster(unsigned cluster);
+	[[nodiscard]] std::optional<DirIndex> isDirSector(unsigned sector);
+
+	struct DirEntryForClusterResult {
+		DirIndex dirIndex;
+		DirIndex dirDirIndex;
+	};
+	[[nodiscard]] std::optional<DirEntryForClusterResult> getDirEntryForCluster(unsigned cluster);
+
 	void unmapHostFiles(unsigned msxDirSector);
 	template<typename FUNC> bool scanMsxDirs(
-		FUNC func, unsigned msxDirSector);
+		FUNC&& func, unsigned msxDirSector);
 	friend struct NullScanner;
 	friend struct DirScanner;
 	friend struct IsDirSector;
@@ -128,7 +132,7 @@ private:
 	const std::string hostDir;
 	const SyncMode syncMode;
 
-	EmuTime lastAccess; // last time there was a sector read/write
+	EmuTime lastAccess = EmuTime::zero(); // last time there was a sector read/write
 
 	// For each directory entry that has a mapped host file/directory we
 	// store the name, last modification time and size of the corresponding

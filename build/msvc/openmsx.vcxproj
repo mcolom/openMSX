@@ -450,7 +450,6 @@
     <ClCompile Include="$(OpenMSXSrcDir)\file\LocalFile.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\file\LocalFileReference.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\file\PreCacheFile.cc" />
-    <ClCompile Include="$(OpenMSXSrcDir)\file\ReadDir.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\file\ZipFileAdapter.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\file\ZlibInflate.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\ide\AbstractIDEDevice.cc" />
@@ -557,6 +556,7 @@
     <ClCompile Include="$(OpenMSXSrcDir)\memory\RomArc.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\memory\RomAscii16_2.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\memory\RomAscii16kB.cc" />
+    <ClCompile Include="$(OpenMSXSrcDir)\memory\RomAscii16X.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\memory\RomAscii8_8.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\memory\RomAscii8kB.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\memory\RomBlocks.cc" />
@@ -775,6 +775,7 @@
     <ClCompile Include="$(OpenMSXSrcDir)\serial\MidiOutWindows.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\serial\MSXFacMidiInterface.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\serial\MSXMidi.cc" />
+    <ClCompile Include="$(OpenMSXSrcDir)\serial\MSXModem.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\serial\MSXRS232.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\serial\MusicModuleMIDI.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\serial\RS232Connector.cc" />
@@ -1135,6 +1136,7 @@
     <None Include="$(OpenMSXSrcDir)\memory\RomArc.hh" />
     <None Include="$(OpenMSXSrcDir)\memory\RomAscii16_2.hh" />
     <None Include="$(OpenMSXSrcDir)\memory\RomAscii16kB.hh" />
+    <None Include="$(OpenMSXSrcDir)\memory\RomAscii16X.hh" />
     <None Include="$(OpenMSXSrcDir)\memory\RomAscii8_8.hh" />
     <None Include="$(OpenMSXSrcDir)\memory\RomAscii8kB.hh" />
     <None Include="$(OpenMSXSrcDir)\memory\RomBlocks.hh" />
@@ -1430,6 +1432,7 @@
     <None Include="$(OpenMSXSrcDir)\serial\MidiOutWindows.hh" />
     <None Include="$(OpenMSXSrcDir)\serial\MSXFacMidiInterface.hh" />
     <None Include="$(OpenMSXSrcDir)\serial\MSXMidi.hh" />
+    <None Include="$(OpenMSXSrcDir)\serial\MSXModem.hh" />
     <None Include="$(OpenMSXSrcDir)\serial\MSXRS232.hh" />
     <None Include="$(OpenMSXSrcDir)\serial\MusicModuleMIDI.hh" />
     <None Include="$(OpenMSXSrcDir)\serial\RS232Connector.hh" />

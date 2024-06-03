@@ -81,7 +81,7 @@ Display::~Display()
 void Display::createVideoSystem()
 {
 	assert(!videoSystem);
-	assert(currentRenderer == RenderSettings::UNINITIALIZED);
+	assert(currentRenderer == RenderSettings::RendererID::UNINITIALIZED);
 	assert(!switchInProgress);
 	currentRenderer = renderSettings.getRenderer();
 	switchInProgress = true;
@@ -144,7 +144,7 @@ Display::Layers::iterator Display::baseLayer()
 			return it;
 		}
 		--it;
-		if ((*it)->getCoverage() == Layer::COVER_FULL) return it;
+		if ((*it)->getCoverage() == Layer::Coverage::FULL) return it;
 	}
 }
 
@@ -153,7 +153,7 @@ void Display::executeRT()
 	repaint();
 }
 
-int Display::signalEvent(const Event& event)
+bool Display::signalEvent(const Event& event)
 {
 	std::visit(overloaded{
 		[&](const FinishFrameEvent& e) {
@@ -199,7 +199,7 @@ int Display::signalEvent(const Event& event)
 		},
 		[](const EventBase&) { /*ignore*/ }
 	}, event);
-	return 0;
+	return false;
 }
 
 string Display::getWindowTitle()
@@ -356,7 +356,7 @@ void Display::repaintImpl()
 void Display::repaintImpl(OutputSurface& surface)
 {
 	for (auto it = baseLayer(); it != end(layers); ++it) {
-		if ((*it)->getCoverage() != Layer::COVER_NONE) {
+		if ((*it)->getCoverage() != Layer::Coverage::NONE) {
 			(*it)->paint(surface);
 		}
 	}
@@ -380,7 +380,7 @@ void Display::repaintDelayed(uint64_t delta)
 
 void Display::addLayer(Layer& layer)
 {
-	int z = layer.getZ();
+	auto z = layer.getZ();
 	auto it = ranges::find_if(layers, [&](const Layer* l) { return l->getZ() > z; });
 	layers.insert(it, &layer);
 	layer.setDisplay(*this);

@@ -11,7 +11,7 @@
 namespace openmsx {
 
 ImGuiLayer::ImGuiLayer(ImGuiManager& manager_)
-	: Layer(Layer::COVER_PARTIAL, Layer::Z_IMGUI)
+	: Layer(Layer::Coverage::PARTIAL, Layer::ZIndex::IMGUI)
 	, manager(manager_)
 {
 }
@@ -39,7 +39,7 @@ void ImGuiLayer::paint(OutputSurface& /*surface*/)
 	}
 
 	// Rendering
-	ImGuiIO& io = ImGui::GetIO();
+	const ImGuiIO& io = ImGui::GetIO();
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

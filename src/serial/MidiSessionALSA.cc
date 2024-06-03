@@ -200,7 +200,7 @@ private:
 	void disconnect();
 
 	// EventListener
-	int signalEvent(const Event& event) override;
+	bool signalEvent(const Event& event) override;
 
 private:
 	EventDistributor& eventDistributor;
@@ -249,9 +249,9 @@ MidiInALSA::~MidiInALSA()
 void MidiInALSA::plugHelper(Connector& connector_, EmuTime::param /*time*/)
 {
 	auto& midiConnector = checked_cast<MidiInConnector&>(connector_);
-	midiConnector.setDataBits(SerialDataInterface::DATA_8); // 8 data bits
-	midiConnector.setStopBits(SerialDataInterface::STOP_1); // 1 stop bit
-	midiConnector.setParityBit(false, SerialDataInterface::EVEN); // no parity
+	midiConnector.setDataBits(SerialDataInterface::DataBits::D8); // 8 data bits
+	midiConnector.setStopBits(SerialDataInterface::StopBits::S1); // 1 stop bit
+	midiConnector.setParityBit(false, SerialDataInterface::Parity::EVEN); // no parity
 
 	setConnector(&midiConnector); // base class will do this in a moment,
 	                              // but thread already needs it
@@ -369,7 +369,7 @@ void MidiInALSA::signal(EmuTime::param time)
 }
 
 // EventListener
-int MidiInALSA::signalEvent(const Event& /*event*/)
+bool MidiInALSA::signalEvent(const Event& /*event*/)
 {
 	if (isPluggedIn()) {
 		signal(scheduler.getCurrentTime());
@@ -377,7 +377,7 @@ int MidiInALSA::signalEvent(const Event& /*event*/)
 		std::scoped_lock lock(mutex);
 		queue.clear();
 	}
-	return 0;
+	return false;
 }
 
 std::string_view MidiInALSA::getName() const

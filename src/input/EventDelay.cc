@@ -1,14 +1,17 @@
 #include "EventDelay.hh"
+
+#include "Event.hh"
 #include "EventDistributor.hh"
 #include "MSXEventDistributor.hh"
-#include "ReverseManager.hh"
-#include "Event.hh"
-#include "Timer.hh"
 #include "MSXException.hh"
+#include "ReverseManager.hh"
+#include "Timer.hh"
+
 #include "narrow.hh"
 #include "one_of.hh"
 #include "ranges.hh"
 #include "stl.hh"
+
 #include <cassert>
 
 #include <SDL.h>
@@ -23,7 +26,6 @@ EventDelay::EventDelay(Scheduler& scheduler_,
 	: Schedulable(scheduler_)
 	, eventDistributor(eventDistributor_)
 	, msxEventDistributor(msxEventDistributor_)
-	, prevEmu(EmuTime::zero())
 	, prevReal(Timer::getTime())
 	, delaySetting(
 		commandController, "inputdelay",
@@ -33,7 +35,7 @@ EventDelay::EventDelay(Scheduler& scheduler_,
 	for (auto type : {KEY_DOWN, KEY_UP,
 	                  MOUSE_MOTION, MOUSE_BUTTON_DOWN, MOUSE_BUTTON_UP,
 	                  JOY_AXIS_MOTION, JOY_HAT, JOY_BUTTON_DOWN, JOY_BUTTON_UP}) {
-		eventDistributor.registerEventListener(type, *this, EventDistributor::MSX);
+		eventDistributor.registerEventListener(type, *this, EventDistributor::Priority::MSX);
 	}
 
 	reverseManager.registerEventDelay(*this);
@@ -49,13 +51,13 @@ EventDelay::~EventDelay()
 	}
 }
 
-int EventDelay::signalEvent(const Event& event)
+bool EventDelay::signalEvent(const Event& event)
 {
 	toBeScheduledEvents.push_back(event);
 	if (delaySetting.getDouble() == 0.0) {
 		sync(getCurrentTime());
 	}
-	return 0;
+	return false;
 }
 
 void EventDelay::sync(EmuTime::param curEmu)
@@ -162,12 +164,12 @@ void EventDelay::flush()
 {
 	EmuTime time = getCurrentTime();
 
-	for (auto& e : scheduledEvents) {
+	for (const auto& e : scheduledEvents) {
 		msxEventDistributor.distributeEvent(e, time);
 	}
 	scheduledEvents.clear();
 
-	for (auto& e : toBeScheduledEvents) {
+	for (const auto& e : toBeScheduledEvents) {
 		msxEventDistributor.distributeEvent(e, time);
 	}
 	toBeScheduledEvents.clear();
