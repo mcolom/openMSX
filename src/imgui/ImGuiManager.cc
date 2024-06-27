@@ -32,6 +32,7 @@
 #include "CartridgeSlotManager.hh"
 #include "CommandException.hh"
 #include "Display.hh"
+#include "VDP.hh"
 #include "Event.hh"
 #include "EventDistributor.hh"
 #include "FileContext.hh"
@@ -42,6 +43,7 @@
 #include "RomDatabase.hh"
 #include "RomInfo.hh"
 #include "SettingsConfig.hh"
+#include "HardwareConfig.hh"
 
 #include "stl.hh"
 #include "strCat.hh"
@@ -491,6 +493,8 @@ void ImGuiManager::paintImGui()
 		});
 	}
 
+	if (statusBarVisible) drawStatusBar(motherBoard);
+
 	// drag and drop  (move this to ImGuiMedia ?)
 	auto insert2 = [&](std::string_view displayName, TclObject cmd) {
 		auto message = strCat("Inserted ", droppedFile, " in ", displayName);
@@ -664,6 +668,112 @@ void ImGuiManager::paintImGui()
 			ImGui::TextUnformatted(insertedInfo);
 		});
 	});
+}
+
+void ImGuiManager::drawStatusBar(MSXMotherBoard* motherBoard)
+{
+	if (ImGui::BeginViewportSideBar("##MainStatusBar", NULL, ImGuiDir_Down, ImGui::GetFrameHeight(),
+			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar)) {
+		im::MenuBar([&]{
+			auto frameTime = ImGui::GetIO().DeltaTime;
+
+			// limit updating to at most 10Hz
+			fpsDrawTimeOut -= frameTime;
+			if (fpsDrawTimeOut < 0.0f) {
+				fpsDrawTimeOut = 0.1f;
+				fps = reactor.getDisplay().getFps();
+			}
+			std::stringstream ssFps;
+			ssFps << std::fixed << std::setprecision(1) << fps << " fps";
+			ImGui::RightAlignText(ssFps.str(), "999.9 fps");
+			simpleToolTip("refresh rate");
+			ImGui::Separator();
+
+			auto [modeStr, extendedStr] = [&] { // TODO: remove duplication with VDP debugger code
+				if (!motherBoard) return std::pair{"-", ""};
+				auto* vdp = dynamic_cast<VDP*>(motherBoard->findDevice("VDP"));
+				if (!vdp) return std::pair{"-", ""};
+
+				auto mode = vdp->getDisplayMode();
+				auto base = mode.getBase();
+				if (base == DisplayMode::TEXT1)      return std::pair{"0 (40)", "TEXT 1"};
+				if (base == DisplayMode::TEXT2)      return std::pair{"0 (80)", "TEXT 2"};
+				if (base == DisplayMode::GRAPHIC1)   return std::pair{"1", "GRAPHIC 1"};
+				if (base == DisplayMode::GRAPHIC2)   return std::pair{"2", "GRAPHIC 2"};
+				if (base == DisplayMode::GRAPHIC3)   return std::pair{"4", "GRAPHIC 3"};
+				if (base == DisplayMode::MULTICOLOR) return std::pair{"3", "MULTICOLOR"};
+				if (base == DisplayMode::GRAPHIC4)   return std::pair{"5", "GRAPHIC 4"};
+				if (base == DisplayMode::GRAPHIC5)   return std::pair{"6", "GRAPHIC 5"};
+				if (base == DisplayMode::GRAPHIC6)   return std::pair{"7", "GRAPHIC 6"};
+				if (base != DisplayMode::GRAPHIC7)   return std::pair{"?", ""};
+				return (mode.getByte() & DisplayMode::YJK)
+					? (mode.getByte() & DisplayMode::YAE) ? std::pair{"11", "GRAPHIC 7 (YJK/YAE mode)"} : std::pair{"12", "GRAPHIC 7 (YJK mode)"}
+					: std::pair{"8", "GRAPHIC 7"};
+			}();
+			ImGui::RightAlignText(modeStr, "0 (80)");
+			simpleToolTip([&]{
+				std::string result = "screen mode as used in MSX-BASIC";
+				if (extendedStr[0]) {
+					strAppend(result, ", corresponds to VDP mode ", extendedStr);
+				}
+				return result;
+			});
+			ImGui::Separator();
+
+			auto timeStr = motherBoard
+				? formatTime((motherBoard->getCurrentTime() - EmuTime::zero()).toDouble())
+				: formatTime(std::nullopt);
+			ImGui::RightAlignText(timeStr, formatTime(0));
+			simpleToolTip("time since MSX power on");
+			ImGui::Separator();
+
+			if (motherBoard) {
+				// limit updating to at most 1Hz
+				speedDrawTimeOut -= frameTime;
+				if (speedDrawTimeOut < 0.0f) {
+					auto realTimePassed = 1.0f - speedDrawTimeOut;
+					speedDrawTimeOut = 1.0f;
+
+					auto boardTime = motherBoard->getCurrentTime();
+					auto boardTimePassed = (boardTime < prevBoardTime)
+						? 0.0 // due to reverse for instance
+						: (boardTime - prevBoardTime).toDouble();
+					prevBoardTime = boardTime;
+
+					speed = 100.0f * boardTimePassed / realTimePassed;
+				}
+			} else {
+				speed = 0.0f;
+				prevBoardTime = EmuTime::zero();
+			}
+			ImGui::RightAlignText(strCat(std::round(speed), '%'), "10000%");
+			simpleToolTip("emulation speed");
+			ImGui::Separator();
+
+			if (motherBoard) {
+				if (const HardwareConfig* machineConfig = motherBoard->getMachineConfig()) {
+					if (const auto* info = machineConfig->getConfig().findChild("info")) {
+						auto manuf = info->getChildData("manufacturer", "?");
+						auto code  = info->getChildData("code", "?");
+						ImGui::StrCat(manuf, ' ', code);
+						simpleToolTip([&]{
+							auto type  = info->getChildData("type", "");
+							auto desc = info->getChildData("description", "");
+							return strCat((type.empty() ? "" : strCat("Machine type: ", type, '\n')), desc);
+						});
+					}
+				}
+			}
+			ImGui::Separator();
+
+			if (auto result = execute(TclObject("guess_title"))) {
+				ImGui::TextUnformatted(result->getString());
+				simpleToolTip("the (probably) currently running software");
+			}
+
+		});
+	}
+	ImGui::End();
 }
 
 void ImGuiManager::iniReadInit()

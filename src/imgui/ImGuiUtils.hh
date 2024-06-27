@@ -46,6 +46,17 @@ void StrCat(Ts&& ...ts)
 	TextUnformatted(std::string_view(s));
 }
 
+inline void RightAlignText(std::string_view text, std::string_view maxWidthText)
+{
+	auto maxWidth = ImGui::CalcTextSize(maxWidthText).x;
+	auto actualWidth = ImGui::CalcTextSize(text).x;
+	if (auto spacing = maxWidth - actualWidth; spacing > 0.0f) {
+		auto pos = ImGui::GetCursorPosX();
+		ImGui::SetCursorPosX(pos + spacing);
+	}
+	ImGui::TextUnformatted(text);
+}
+
 } // namespace ImGui
 
 namespace openmsx {
@@ -118,7 +129,7 @@ void ComboBox(const char* label, VideoSourceSetting& setting);
 
 const char* getComboString(int item, const char* itemsSeparatedByZeros);
 
-std::string formatTime(double time);
+std::string formatTime(std::optional<double> time);
 float calculateFade(float current, float target, float period);
 
 template<int HexDigits>
@@ -298,6 +309,8 @@ enum class imColor : unsigned {
 
 	KEY_ACTIVE,     // virtual keyboard
 	KEY_NOT_ACTIVE,
+
+	FOLDER,
 
 	NUM_COLORS
 };

@@ -26,6 +26,7 @@ namespace openmsx {
 	if (pluggable == "msx-printer")        return "MSX printer";
 	if (pluggable == "epson-printer")      return "Epson printer";
 	if (pluggable == "tetris2-protection") return "Tetris II SE dongle";
+	if (pluggable == "circuit-designer-rd-dongle") return "Circuit Designer RD dongle";
 	return std::string(pluggable);
 }
 
@@ -59,6 +60,9 @@ void ImGuiConnector::showMenu(MSXMotherBoard* motherBoard)
 								manager.executeDelayed(makeTclList("plug", connectorName, plugName));
 							}
 							simpleToolTip(plug->getDescription());
+							if (selected) {
+								ImGui::SetItemDefaultFocus();
+							}
 						}
 					});
 					if (const auto& desc = currentPluggable.getDescription(); !desc.empty()) {

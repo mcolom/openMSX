@@ -3,7 +3,8 @@
 
 #include "serialize_meta.hh"
 
-#include "MemBuffer.hh"
+#include "cstd.hh"
+#include "narrow.hh"
 #include "power_of_two.hh"
 #include "ranges.hh"
 #include "static_vector.hh"
@@ -12,6 +13,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <vector>
 
 namespace openmsx {
 
@@ -56,9 +58,11 @@ public:
 	};
 
 	struct Geometry {
-		constexpr Geometry(DeviceInterface deviceInterface_, std::initializer_list<Region> regions_)
+		constexpr Geometry(DeviceInterface deviceInterface_, std::initializer_list<Region> regions_,
+			int writeProtectPinRange_ = 0)
 			: deviceInterface(deviceInterface_)
 			, regions(regions_)
+			, writeProtectPinRange(writeProtectPinRange_)
 			, size(sum(regions, [](Region r) { return r.count * r.size; }))
 			// Originally sum(regions, &Region::count), but seems to mis-compile to 0 on MSVC.
 			// It looks like sum with projection doesn’t work at compile-time in MSVC 2022?
@@ -66,11 +70,13 @@ public:
 			, sectorCount(sum(regions, [](Region r) { return r.count; })) {}
 		DeviceInterface deviceInterface;
 		static_vector<Region, 4> regions;
+		int writeProtectPinRange; // sectors protected by WP#, negative: from top
 		power_of_two<size_t> size;
 		size_t sectorCount;
 
 		constexpr void validate() const {
 			assert(ranges::all_of(regions, [](const auto& region) { return region.count > 0; }));
+			assert(narrow_cast<unsigned>(cstd::abs(writeProtectPinRange)) <= sectorCount);
 		}
 	};
 
@@ -205,7 +211,7 @@ public:
 	 */
 	void setVppWpPinLow(bool value) { vppWpPinLow = value; }
 
-	[[nodiscard]] size_t size() const { return chip.geometry.size; }
+	[[nodiscard]] power_of_two<size_t> size() const { return chip.geometry.size; }
 	[[nodiscard]] uint8_t read(size_t address);
 	[[nodiscard]] uint8_t peek(size_t address) const;
 	void write(size_t address, uint8_t value);
@@ -227,12 +233,25 @@ public:
 
 	enum class State { IDLE, IDENT, CFI, STATUS, PRGERR };
 
+	struct Sector {
+		size_t address;
+		power_of_two<size_t> size;
+		bool writeProtect;
+		ptrdiff_t writeAddress = -1;
+		const uint8_t* readAddress = nullptr;
+
+		std::weak_ordering operator<=>(const Sector& sector) const { return address <=> sector.address; }
+		bool operator==(const Sector& sector) const { return address == sector.address; }
+	};
+
 private:
 	AmdFlash(const std::string& name, const ValidatedChip& chip,
 	         const Rom* rom, std::span<const bool> writeProtectSectors,
 	         const DeviceConfig& config);
-	struct GetSectorInfoResult { size_t sector, sectorSize, offset; };
-	[[nodiscard]] GetSectorInfoResult getSectorInfo(size_t address) const;
+
+	[[nodiscard]] size_t getSectorIndex(size_t address) const;
+	[[nodiscard]] Sector& getSector(size_t address) { return sectors[getSectorIndex(address)]; };
+	[[nodiscard]] const Sector& getSector(size_t address) const { return sectors[getSectorIndex(address)]; };
 
 	void softReset();
 	[[nodiscard]] uint16_t peekAutoSelect(size_t address, uint16_t undefined = 0xFFFF) const;
@@ -256,7 +275,7 @@ private:
 	[[nodiscard]] bool checkCommandContinuityCheck();
 	[[nodiscard]] bool partialMatch(std::span<const uint8_t> dataSeq) const;
 
-	[[nodiscard]] bool isSectorWritable(size_t sector) const;
+	[[nodiscard]] bool isWritable(const Sector& sector) const;
 
 public:
 	static constexpr unsigned MAX_CMD_SIZE = 5 + 256; // longest command is BufferProgram
@@ -264,10 +283,8 @@ public:
 private:
 	MSXMotherBoard& motherBoard;
 	std::unique_ptr<SRAM> ram;
-	MemBuffer<ptrdiff_t> writeAddress;
-	MemBuffer<const uint8_t*> readAddress;
 	const Chip& chip;
-
+	std::vector<Sector> sectors;
 	static_vector<AddressValue, MAX_CMD_SIZE> cmd;
 	State state = State::IDLE;
 	uint8_t status = 0x80;
@@ -307,7 +324,7 @@ namespace AmdFlashChip
 	// Micron M29W640GB
 	static constexpr ValidatedChip M29W640GB = {{
 		.autoSelect{.manufacturer = STM, .device{0x10, 0x00}, .extraCode = 0x0008, .undefined = 0, .oddZero = true, .readMask = 0x7F},
-		.geometry{DeviceInterface::x8x16, {{8, 0x2000}, {127, 0x10000}}},
+		.geometry{DeviceInterface::x8x16, {{8, 0x2000}, {127, 0x10000}}, 2},
 		.program{.fastCommand = true, .bufferCommand = true, .shortAbortReset = true, .pageSize = 32},
 		.cfi{
 			.command = true, .withManufacturerDevice = true, .commandMask = 0xFFF, .readMask = 0xFF,
@@ -319,7 +336,7 @@ namespace AmdFlashChip
 	// Infineon / Cypress / Spansion S29GL064S70TFI040
 	static constexpr ValidatedChip S29GL064S70TFI040 = {{
 		.autoSelect{.manufacturer = AMD, .device{0x10, 0x00}, .extraCode = 0xFF0A, .readMask = 0x0F},
-		.geometry{DeviceInterface::x8x16, {{8, 0x2000}, {127, 0x10000}}},
+		.geometry{DeviceInterface::x8x16, {{8, 0x2000}, {127, 0x10000}}, 2},
 		.program{.bufferCommand = true, .pageSize = 256},
 		.cfi{
 			.command = true, .withAutoSelect = true, .exitCommand = true, .commandMask = 0xFF, .readMask = 0x7F,
