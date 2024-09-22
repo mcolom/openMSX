@@ -497,9 +497,11 @@
     <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiSymbols.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiTools.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiTrainer.cc" />
+    <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiSCCViewer.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiVdpRegs.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiUtils.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiWatchExpr.cc" />
+    <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiWaveViewer.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\imgui\Shortcuts.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\input\ArkanoidPad.cc" />
     <ClCompile Include="$(OpenMSXSrcDir)\input\DummyJoystick.cc" />
@@ -1076,9 +1078,11 @@
     <None Include="$(OpenMSXSrcDir)\imgui\ImGuiSymbols.hh" />
     <None Include="$(OpenMSXSrcDir)\imgui\ImGuiTools.hh" />
     <None Include="$(OpenMSXSrcDir)\imgui\ImGuiTrainer.hh" />
+    <None Include="$(OpenMSXSrcDir)\imgui\ImGuiSCCViewer.hh" />
     <None Include="$(OpenMSXSrcDir)\imgui\ImGuiVdpRegs.hh" />
     <None Include="$(OpenMSXSrcDir)\imgui\ImGuiUtils.hh" />
     <None Include="$(OpenMSXSrcDir)\imgui\ImGuiWatchExpr.hh" />
+    <None Include="$(OpenMSXSrcDir)\imgui\ImGuiWaveViewer.hh" />
     <None Include="$(OpenMSXSrcDir)\imgui\Shortcuts.hh" />
     <None Include="$(OpenMSXSrcDir)\input\ArkanoidPad.hh" />
     <None Include="$(OpenMSXSrcDir)\input\DummyJoystick.hh" />
@@ -1357,7 +1361,6 @@
     <None Include="$(OpenMSXSrcDir)\video\Icon.hh" />
     <None Include="$(OpenMSXSrcDir)\video\Layer.hh" />
     <None Include="$(OpenMSXSrcDir)\video\GLContext.hh" />
-    <None Include="$(OpenMSXSrcDir)\video\LayerListener.hh" />
     <None Include="$(OpenMSXSrcDir)\video\scalers\LineScalers.hh" />
     <None Include="$(OpenMSXSrcDir)\video\OutputSurface.hh" />
     <None Include="$(OpenMSXSrcDir)\video\PixelOperations.hh" />

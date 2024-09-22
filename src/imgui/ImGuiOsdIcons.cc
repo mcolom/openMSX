@@ -33,6 +33,7 @@ ImGuiOsdIcons::ImGuiOsdIcons(ImGuiManager& manager_)
 void ImGuiOsdIcons::save(ImGuiTextBuffer& buf)
 {
 	savePersistent(buf, *this, persistentElements);
+	adjust.save(buf);
 	for (const auto& [i, icon] : enumerate(iconInfo)) {
 		auto n = narrow<int>(i + 1);
 		buf.appendf("icon.%d.enabled=%d\n",   n, icon.enable);
@@ -51,6 +52,8 @@ void ImGuiOsdIcons::loadStart()
 void ImGuiOsdIcons::loadLine(std::string_view name, zstring_view value)
 {
 	if (loadOnePersistent(name, value, *this, persistentElements)) {
+		// already handled
+	} else if (adjust.loadLine(name, value)) {
 		// already handled
 	} else if (name.starts_with("icon.")) {
 		auto [numStr, suffix] = StringOp::splitOnFirst(name.substr(5), '.');
@@ -160,6 +163,7 @@ void ImGuiOsdIcons::paint(MSXMotherBoard* /*motherBoard*/)
 	                             ImGuiWindowFlags_NoCollapse |
 	                             ImGuiWindowFlags_NoBackground |
 	                             ImGuiWindowFlags_NoFocusOnAppearing |
+	                             ImGuiWindowFlags_NoNav |
 	                             (iconsAllowMove ? 0 : ImGuiWindowFlags_NoMove)
 	                           : 0;
 	adjust.pre();
@@ -218,6 +222,10 @@ void ImGuiOsdIcons::paint(MSXMotherBoard* /*motherBoard*/)
 					showConfigureIcons = true;
 				}
 			});
+		}
+
+		if (iconsHideTitle && ImGui::IsWindowFocused()) {
+			ImGui::SetWindowFocus(nullptr); // give-up focus
 		}
 	});
 }

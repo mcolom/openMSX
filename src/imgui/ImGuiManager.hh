@@ -42,9 +42,10 @@ class ImGuiMachine;
 class ImGuiMedia;
 class ImGuiMessages;
 class ImGuiOpenFile;
-class ImGuiPalette;
 class ImGuiOsdIcons;
+class ImGuiPalette;
 class ImGuiReverseBar;
+class ImGuiSCCViewer;
 class ImGuiSettings;
 class ImGuiSoundChip;
 class ImGuiSpriteViewer;
@@ -53,6 +54,7 @@ class ImGuiTools;
 class ImGuiTrainer;
 class ImGuiVdpRegs;
 class ImGuiWatchExpr;
+class ImGuiWaveViewer;
 class RomInfo;
 class SettingsConfig;
 
@@ -152,6 +154,8 @@ public:
 	std::unique_ptr<ImGuiConnector> connector;
 	std::unique_ptr<ImGuiTools> tools;
 	std::unique_ptr<ImGuiTrainer> trainer;
+	std::unique_ptr<ImGuiSCCViewer> sccViewer;
+	std::unique_ptr<ImGuiWaveViewer> waveViewer;
 	std::unique_ptr<ImGuiCheatFinder> cheatFinder;
 	std::unique_ptr<ImGuiDiskManipulator> diskManipulator;
 	std::unique_ptr<ImGuiSettings> settings;

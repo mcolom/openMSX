@@ -603,6 +603,9 @@
     <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiTrainer.cc">
       <Filter>imgui</Filter>
     </ClCompile>
+    <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiSCCViewer.cc">
+      <Filter>imgui</Filter>
+    </ClCompile>
     <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiVdpRegs.cc">
       <Filter>imgui</Filter>
     </ClCompile>
@@ -610,6 +613,9 @@
       <Filter>imgui</Filter>
     </ClCompile>
     <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiWatchExpr.cc">
+      <Filter>imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="$(OpenMSXSrcDir)\imgui\ImGuiWaveViewer.cc">
       <Filter>imgui</Filter>
     </ClCompile>
     <ClCompile Include="$(OpenMSXSrcDir)\imgui\Shortcuts.cc">
@@ -2090,6 +2096,9 @@
     <None Include="$(OpenMSXSrcDir)\imgui\ImGuiTrainer.hh">
       <Filter>imgui</Filter>
     </None>
+    <None Include="$(OpenMSXSrcDir)\imgui\ImGuiSCCViewer.hh">
+      <Filter>imgui</Filter>
+    </None>
     <None Include="$(OpenMSXSrcDir)\imgui\ImGuiVdpRegs.hh">
       <Filter>imgui</Filter>
     </None>
@@ -2097,6 +2106,9 @@
       <Filter>imgui</Filter>
     </None>
     <None Include="$(OpenMSXSrcDir)\imgui\ImGuiWatchExpr.hh">
+      <Filter>imgui</Filter>
+    </None>
+    <None Include="$(OpenMSXSrcDir)\imgui\ImGuiWaveViewer.hh">
       <Filter>imgui</Filter>
     </None>
     <None Include="$(OpenMSXSrcDir)\imgui\Shortcuts.hh">
@@ -2802,9 +2814,6 @@
       <Filter>video</Filter>
     </None>
     <None Include="$(OpenMSXSrcDir)\video\Layer.hh">
-      <Filter>video</Filter>
-    </None>
-    <None Include="$(OpenMSXSrcDir)\video\LayerListener.hh">
       <Filter>video</Filter>
     </None>
     <None Include="$(OpenMSXSrcDir)\video\OutputSurface.hh">

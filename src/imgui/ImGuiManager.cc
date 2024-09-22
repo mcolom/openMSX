@@ -4,9 +4,9 @@
 #include "ImGuiBreakPoints.hh"
 #include "ImGuiCharacter.hh"
 #include "ImGuiCheatFinder.hh"
-#include "ImGuiCpp.hh"
 #include "ImGuiConnector.hh"
 #include "ImGuiConsole.hh"
+#include "ImGuiCpp.hh"
 #include "ImGuiDebugger.hh"
 #include "ImGuiDiskManipulator.hh"
 #include "ImGuiHelp.hh"
@@ -15,9 +15,10 @@
 #include "ImGuiMedia.hh"
 #include "ImGuiMessages.hh"
 #include "ImGuiOpenFile.hh"
-#include "ImGuiPalette.hh"
 #include "ImGuiOsdIcons.hh"
+#include "ImGuiPalette.hh"
 #include "ImGuiReverseBar.hh"
+#include "ImGuiSCCViewer.hh"
 #include "ImGuiSettings.hh"
 #include "ImGuiSoundChip.hh"
 #include "ImGuiSpriteViewer.hh"
@@ -27,23 +28,24 @@
 #include "ImGuiUtils.hh"
 #include "ImGuiVdpRegs.hh"
 #include "ImGuiWatchExpr.hh"
-
+#include "ImGuiWaveViewer.hh"
 
 #include "CartridgeSlotManager.hh"
 #include "CommandException.hh"
 #include "Display.hh"
-#include "VDP.hh"
 #include "Event.hh"
 #include "EventDistributor.hh"
 #include "FileContext.hh"
 #include "FileOperations.hh"
 #include "FilePool.hh"
+#include "HardwareConfig.hh"
+#include "Keyboard.hh"
 #include "Reactor.hh"
 #include "RealDrive.hh"
 #include "RomDatabase.hh"
 #include "RomInfo.hh"
 #include "SettingsConfig.hh"
-#include "HardwareConfig.hh"
+#include "VDP.hh"
 
 #include "stl.hh"
 #include "strCat.hh"
@@ -187,6 +189,8 @@ ImGuiManager::ImGuiManager(Reactor& reactor_)
 	openFile = std::make_unique<ImGuiOpenFile>(*this);
 	trainer = std::make_unique<ImGuiTrainer>(*this);
 	cheatFinder = std::make_unique<ImGuiCheatFinder>(*this);
+	sccViewer = std::make_unique<ImGuiSCCViewer>(*this);
+	waveViewer = std::make_unique<ImGuiWaveViewer>(*this);
 	diskManipulator = std::make_unique<ImGuiDiskManipulator>(*this);
 	soundChip = std::make_unique<ImGuiSoundChip>(*this);
 	keyboard = std::make_unique<ImGuiKeyboard>(*this);
@@ -228,7 +232,7 @@ ImGuiManager::ImGuiManager(Reactor& reactor_)
 	using enum EventType;
 	for (auto type : {MOUSE_BUTTON_UP, MOUSE_BUTTON_DOWN, MOUSE_MOTION, MOUSE_WHEEL,
 	                  KEY_UP, KEY_DOWN, TEXT,
-	                  WINDOW, FILE_DROP, IMGUI_DELAYED_ACTION, BREAK}) {
+	                  WINDOW, FILE_DROP, IMGUI_DELAYED_ACTION, BREAK, MACHINE_LOADED}) {
 		eventDistributor.registerEventListener(type, *this, EventDistributor::Priority::IMGUI);
 	}
 
@@ -247,7 +251,7 @@ ImGuiManager::~ImGuiManager()
 
 	auto& eventDistributor = reactor.getEventDistributor();
 	using enum EventType;
-	for (auto type : {BREAK, IMGUI_DELAYED_ACTION, FILE_DROP, WINDOW, TEXT,
+	for (auto type : {MACHINE_LOADED, BREAK, IMGUI_DELAYED_ACTION, FILE_DROP, WINDOW, TEXT,
 	                  KEY_DOWN, KEY_UP,
 	                  MOUSE_WHEEL, MOUSE_MOTION, MOUSE_BUTTON_DOWN, MOUSE_BUTTON_UP}) {
 		eventDistributor.unregisterEventListener(type, *this);
@@ -297,9 +301,33 @@ void ImGuiManager::loadLine(std::string_view name, zstring_view value)
 	loadOnePersistent(name, value, *this, persistentElements);
 }
 
+static gl::ivec2 ensureVisible(gl::ivec2 windowPos, gl::ivec2 windowSize)
+{
+	auto windowTL = windowPos;
+	auto windowBR = windowTL + windowSize;
+	auto overlaps = [&](const ImGuiPlatformMonitor& monitor) {
+		auto monitorTL = trunc(gl::vec2(monitor.MainPos));
+		auto monitorBR = monitorTL + trunc(gl::vec2(monitor.MainSize));
+		return windowTL.x < monitorBR.x &&
+		       windowBR.x > monitorTL.x &&
+		       windowTL.y < monitorBR.y &&
+		       windowBR.y > monitorTL.y;
+	};
+
+	const auto& monitors = ImGui::GetPlatformIO().Monitors;
+	if (!monitors.empty() && ranges::none_of(monitors, overlaps)) {
+		// window isn't visible in any of the monitors
+		// -> place centered on primary monitor
+		return gl::ivec2(SDL_WINDOWPOS_CENTERED);
+	}
+	return windowPos; // current placement is fine
+}
+
 void ImGuiManager::loadEnd()
 {
-	reactor.getDisplay().setWindowPosition(windowPos);
+	auto& display = reactor.getDisplay();
+	windowPos = ensureVisible(windowPos, display.getWindowSize());
+	display.setWindowPosition(windowPos);
 }
 
 Interpreter& ImGuiManager::getInterpreter()
@@ -357,9 +385,13 @@ void ImGuiManager::printError(std::string_view message)
 bool ImGuiManager::signalEvent(const Event& event)
 {
 	if (auto* evt = get_event_if<SdlEvent>(event)) {
+		const ImGuiIO& io = ImGui::GetIO();
+		if (!io.BackendPlatformUserData) {
+			// ImGui backend not (yet) initialized (e.g. after 'set renderer none')
+			return false;
+		}
 		const SDL_Event& sdlEvent = evt->getSdlEvent();
 		ImGui_ImplSDL2_ProcessEvent(&sdlEvent);
-		const ImGuiIO& io = ImGui::GetIO();
 		if ((io.WantCaptureMouse &&
 		     sdlEvent.type == one_of(SDL_MOUSEMOTION, SDL_MOUSEWHEEL,
 		                             SDL_MOUSEBUTTONDOWN, SDL_MOUSEBUTTONUP)) ||
@@ -382,6 +414,12 @@ bool ImGuiManager::signalEvent(const Event& event)
 			handleDropped = true;
 			break;
 		}
+		case EventType::MACHINE_LOADED:
+			// Triggers when a new machine gets activated, e.g.:
+			// * after a 'step_back' (or any click in the reverse bar).
+			// * after a machine instance switch
+			// (For now) this triggers the same behavior as BREAK: scroll debugger to PC
+			[[fallthrough]];
 		case EventType::BREAK:
 			debugger->signalBreak();
 			break;
@@ -446,6 +484,13 @@ void ImGuiManager::paintImGui()
 	updateParts();
 
 	auto* motherBoard = reactor.getMotherBoard();
+	if (motherBoard) {
+		if (auto* keyb = motherBoard->getKeyboard()) {
+			auto time = motherBoard->getCurrentTime();
+			keyb->setFocus(!ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow), time);
+		}
+	}
+
 	for (auto* part : parts) {
 		part->paint(motherBoard);
 	}
@@ -498,9 +543,10 @@ void ImGuiManager::paintImGui()
 	// drag and drop  (move this to ImGuiMedia ?)
 	auto insert2 = [&](std::string_view displayName, TclObject cmd) {
 		auto message = strCat("Inserted ", droppedFile, " in ", displayName);
-		executeDelayed(cmd, [this, message](const TclObject&){
+		executeDelayed(cmd, [this, message, cmd](const TclObject&){
 			insertedInfo = message;
 			openInsertedInfo = true;
+			media->addRecent(cmd);
 		});
 	};
 	auto insert = [&](std::string_view displayName, std::string_view cmd) {
@@ -672,7 +718,7 @@ void ImGuiManager::paintImGui()
 
 void ImGuiManager::drawStatusBar(MSXMotherBoard* motherBoard)
 {
-	if (ImGui::BeginViewportSideBar("##MainStatusBar", NULL, ImGuiDir_Down, ImGui::GetFrameHeight(),
+	if (ImGui::BeginViewportSideBar("##MainStatusBar", nullptr, ImGuiDir_Down, ImGui::GetFrameHeight(),
 			ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar)) {
 		im::MenuBar([&]{
 			auto frameTime = ImGui::GetIO().DeltaTime;
@@ -691,7 +737,7 @@ void ImGuiManager::drawStatusBar(MSXMotherBoard* motherBoard)
 
 			auto [modeStr, extendedStr] = [&] { // TODO: remove duplication with VDP debugger code
 				if (!motherBoard) return std::pair{"-", ""};
-				auto* vdp = dynamic_cast<VDP*>(motherBoard->findDevice("VDP"));
+				const auto* vdp = dynamic_cast<const VDP*>(motherBoard->findDevice("VDP"));
 				if (!vdp) return std::pair{"-", ""};
 
 				auto mode = vdp->getDisplayMode();

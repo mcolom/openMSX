@@ -47,6 +47,7 @@ public:
 	~RenderSettings();
 
 	/** Accuracy [screen, line, pixel]. */
+	[[nodiscard]] EnumSetting<Accuracy>& getAccuracySetting() { return accuracySetting; }
 	[[nodiscard]] Accuracy getAccuracy() const { return accuracySetting.getEnum(); }
 
 	/** Deinterlacing [on, off]. */
@@ -112,7 +113,10 @@ public:
 
 	/** The current renderer. */
 	[[nodiscard]] RendererSetting& getRendererSetting() { return rendererSetting; }
-	[[nodiscard]] RendererID getRenderer() const { return rendererSetting.getEnum(); }
+	[[nodiscard]] RendererID getRenderer() const {
+		auto r = rendererSetting.getEnum();
+		return r == RendererID::UNINITIALIZED ? RendererID::DUMMY : r;
+	}
 
 	/** The current scaling algorithm. */
 	[[nodiscard]] auto& getScaleAlgorithmSetting() { return scaleAlgorithmSetting; }

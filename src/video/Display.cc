@@ -243,6 +243,12 @@ gl::ivec2 Display::retrieveWindowPosition()
 	return reactor.getImGuiManager().retrieveWindowPosition();
 }
 
+gl::ivec2 Display::getWindowSize() const
+{
+	int factor = renderSettings.getScaleFactor();
+	return {320 * factor, 240 * factor};
+}
+
 float Display::getFps() const
 {
 	return 1000000.0f * NUM_FRAME_DURATIONS / narrow_cast<float>(frameDurationSum);
@@ -250,11 +256,8 @@ float Display::getFps() const
 
 void Display::update(const Setting& setting) noexcept
 {
-	if (&setting == &renderSettings.getRendererSetting()) {
-		checkRendererSwitch();
-	} else {
-		UNREACHABLE;
-	}
+	assert(&setting == &renderSettings.getRendererSetting()); (void)setting;
+	checkRendererSwitch();
 }
 
 void Display::checkRendererSwitch()
@@ -396,12 +399,19 @@ void Display::removeLayer(Layer& layer)
 	layers.erase(rfind_unguarded(layers, &layer));
 }
 
-void Display::updateZ(Layer& layer) noexcept
+void Display::updateZ(Layer& layer)
 {
-	// Remove at old Z-index...
-	removeLayer(layer);
-	// ...and re-insert at new Z-index.
-	addLayer(layer);
+	auto oldPos = rfind_unguarded(layers, &layer);
+	auto z = layer.getZ();
+	auto newPos = ranges::find_if(layers, [&](const Layer* l) { return l->getZ() >= z; });
+
+	if (oldPos == newPos) {
+		return;
+	} else if (oldPos < newPos) {
+		std::rotate(oldPos, oldPos + 1, newPos);
+	} else {
+		std::rotate(newPos, oldPos, oldPos + 1);
+	}
 }
 
 

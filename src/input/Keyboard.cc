@@ -733,11 +733,14 @@ Keyboard::Keyboard(MSXMotherBoard& motherBoard,
 	// We do not listen for CONSOLE_OFF_EVENTS because rescanning the
 	// keyboard can have unwanted side effects
 
-	motherBoard.getReverseManager().registerKeyboard(*this);
+	motherBoard.registerKeyboard(*this);
 }
 
 Keyboard::~Keyboard()
 {
+	auto& motherBoard = keybDebuggable.getMotherBoard();
+	motherBoard.unregisterKeyboard(*this);
+
 	stateChangeDistributor.unregisterListener(*this);
 	msxEventDistributor.unregisterEventListener(*this);
 }
@@ -844,6 +847,14 @@ void Keyboard::transferHostKeyMatrix(const Keyboard& source)
 	}
 }
 
+void Keyboard::setFocus(bool newFocus, EmuTime::param time)
+{
+	if (newFocus == focus) return;
+	focus = newFocus;
+
+	syncHostKeyMatrix(time); // release all keys on lost focus
+}
+
 /* Received an MSX event
  * Following events get processed:
  *  EventType::KEY_DOWN
@@ -874,6 +885,11 @@ void Keyboard::signalStateChange(const StateChange& event)
 }
 
 void Keyboard::stopReplay(EmuTime::param time) noexcept
+{
+	syncHostKeyMatrix(time);
+}
+
+void Keyboard::syncHostKeyMatrix(EmuTime::param time)
 {
 	for (auto [row, hkm] : enumerate(hostKeyMatrix)) {
 		changeKeyMatrixEvent(time, uint8_t(row), hkm);
@@ -927,6 +943,8 @@ void Keyboard::releaseKeyMatrixEvent(EmuTime::param time, KeyMatrixPosition pos)
 
 void Keyboard::changeKeyMatrixEvent(EmuTime::param time, uint8_t row, uint8_t newValue)
 {
+	if (!focus) newValue = 0xff;
+
 	// This method already updates hostKeyMatrix[],
 	// userKeyMatrix[] will soon be updated via KeyMatrixState events.
 	hostKeyMatrix[row] = newValue;

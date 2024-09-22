@@ -7,8 +7,10 @@
 #include "ImGuiKeyboard.hh"
 #include "ImGuiManager.hh"
 #include "ImGuiMessages.hh"
+#include "ImGuiSCCViewer.hh"
 #include "ImGuiTrainer.hh"
 #include "ImGuiUtils.hh"
+#include "ImGuiWaveViewer.hh"
 
 #include "AviRecorder.hh"
 #include "Display.hh"
@@ -126,6 +128,10 @@ void ImGuiTools::showMenu(MSXMotherBoard* motherBoard)
 
 		ImGui::MenuItem("Trainer Selector ...", nullptr, &manager.trainer->show);
 		ImGui::MenuItem("Cheat Finder ...", nullptr, &manager.cheatFinder->show);
+		ImGui::Separator();
+
+		ImGui::MenuItem("SCC viewer ...", nullptr, &manager.sccViewer->show);
+		ImGui::MenuItem("Audio channel viewer ...", nullptr, &manager.waveViewer->show);
 		ImGui::Separator();
 
 		im::Menu("Toys", [&]{
